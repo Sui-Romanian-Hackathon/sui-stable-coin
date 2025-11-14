@@ -1,0 +1,32 @@
+# Ignore build output
+.next
+out
+build
+
+# Ignore dependencies
+node_modules
+
+# Ignore lock files
+package-lock.json
+pnpm-lock.yaml
+yarn.lock
+
+# Ignore compiled assets
+*.min.js
+*.min.css
+
+# Ignore environment files
+.env
+.env.*.local
+
+# Ignore coverage or test output
+coverage
+dist
+tmp
+.cache
+
+# Ignore system files
+.DS_Store
+
+# Optional: ignore public/static if not formatted
+public/*

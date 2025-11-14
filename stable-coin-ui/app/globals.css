@@ -1,0 +1,49 @@
+@import 'tailwindcss';
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+* {
+    @apply transition-colors duration-700;
+}
+
+html {
+    width: 100%;
+    height: 100%;
+}
+
+/* SUI CONNECT BUTTON */
+
+.Button_buttonVariants__x1s81q0 {
+    /*background-color: transparent !important; !* blue-600 *!*/
+    /*pointer-events: none;*/
+    cursor: pointer;
+    height: 20px !important;
+    padding: 15px !important;
+    border-radius: 12px !important;
+    background-color: #0d3896 !important;
+    color: white !important;
+}
+
+.Button_buttonVariants__x1s81q0 div {
+    color: white !important;
+}
+
+.AccountDropdownMenu_menuContainer__div2ql1 {
+    background-color: #0d3896 !important;
+}
+
+.AccountDropdownMenu_menuContainer__div2ql1 div {
+    color: white !important;
+}
+
+.AccountDropdownMenu_menuContainer__div2ql1 div:hover {
+    background-color: #09296c !important; /* blue-700 */
+}
+
+.Button_buttonVariants__x1s81q0:hover {
+    background-color: #09296c !important; /* blue-700 */
+}
+
+.AccountDropdownMenu_menuItem__div2ql3 svg path {
+    fill: white !important;
+}
