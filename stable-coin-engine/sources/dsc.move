@@ -1,0 +1,402 @@
+/// Module: dsc
+#[allow(lint(self_transfer))]
+module dsc::dsc;
+
+use SupraOracle::SupraSValueFeed::OracleHolder;
+use dsc::dsc_config::{Self, DSCConfig};
+use dsc::oracle;
+use std::string;
+use std::type_name::TypeName;
+use std::u128;
+use sui::coin::{Self, TreasuryCap, Coin};
+use sui::coin_registry;
+use sui::event;
+use sui::object_bag::{Self, ObjectBag};
+use sui::table::{Self, Table};
+use sui::vec_map::{Self, VecMap};
+
+// ==================== Errors ====================
+#[error]
+const EAmountIsZero: vector<u8> = b"Amount is zero";
+#[error]
+const ECoinNotSupported: vector<u8> = b"Coin not supported by protocol";
+#[error]
+const EUserNotAuthorizedToChangePosition: vector<u8> = b"User not authorized to change position";
+#[error]
+const EPositionStillHasCollateral: vector<u8> = b"Position still has collateral, can't delete it";
+#[error]
+const EPositionStillHasDebt: vector<u8> = b"Position still has debt, can't delete it";
+#[error]
+const ENoOracleSupportedYet: vector<u8> =
+    b"No oracle price feed supported yet. Contact the protocol admin!";
+#[error]
+const EOracleNotSupported: vector<u8> = b"Price feed oracle holder not supported by the protocol";
+#[error]
+const EHealthFactorToLow: vector<u8> = b"Operation puts you you position in liquidation risk";
+
+// ==================== Events ====================
+public struct NewPositionCreated has copy, drop {
+    new_position_id: ID,
+}
+
+public struct NewDepositMade has copy, drop {
+    coin_type: TypeName,
+    amount: u128,
+}
+
+// ==================== Structures====================
+
+// One time witness used for DSC coin init
+public struct DSC has drop {}
+
+//Object that stores the treasury capabilities
+public struct DSCLedger has key {
+    id: UID,
+    treasury_cap: TreasuryCap<DSC>,
+    users_positions_index: Table<address, ID>,
+}
+
+// Object that stores the position of a user
+public struct UserPosition has key {
+    id: UID,
+    owner: address,
+    vault: ObjectBag,
+    vault_ledger: VecMap<TypeName, u128>,
+    debt: u128,
+    last_HF: u128,
+}
+
+// ==================== Init function ====================
+fun init(otw: DSC, ctx: &mut TxContext) {
+    let (builder, treasury_cap) = coin_registry::new_currency_with_otw<DSC>(
+        otw,
+        18, // decimals
+        string::utf8(b"DSC"), // symbol
+        string::utf8(b"Decentralized Stablecoin"),
+        string::utf8(b"Protocol-native paged to USD"),
+        string::utf8(b""), // icon URL
+        ctx,
+    );
+
+    let metadata_cap = coin_registry::finalize(builder, ctx);
+
+    // 3) Transfer the MetadataCap<DSC> to the sender (for metadata management)
+    transfer::public_transfer(metadata_cap, tx_context::sender(ctx));
+
+    // 4) Create and store your DSCLedger with the TreasuryCap
+    let dsc_ledger = DSCLedger {
+        id: object::new(ctx),
+        treasury_cap,
+        users_positions_index: table::new(ctx),
+    };
+
+    // 5) Share your DSCLedger globally as your protocol engine
+    transfer::share_object(dsc_ledger);
+}
+
+// ==================== Public functions ====================
+
+/// Create a new user position object, register in in the index and create a User capability object
+///
+/// # Arguments
+/// - dsc_ledger - the ledger of the protocol
+/// - ctx: transaction context
+///
+/// # Returns
+/// - Returns the IDs of the usr capability and the id of the new user position
+public fun new_position(dsc_ledger: &mut DSCLedger, ctx: &mut TxContext): (ID) {
+    let owner = ctx.sender();
+    // Create new position object
+    let new_position_obj = UserPosition {
+        id: object::new(ctx),
+        owner,
+        vault: object_bag::new(ctx),
+        vault_ledger: vec_map::empty(),
+        debt: 0,
+        last_HF: u128::max_value!(),
+    };
+    let new_position_id = object::id(&new_position_obj);
+    // Update the dsc ledger to include this new object
+    dsc_ledger.users_positions_index.add(owner, new_position_id);
+    // make the user position shared
+    transfer::share_object(new_position_obj);
+    // send the user capability to the
+
+    event::emit(NewPositionCreated {
+        new_position_id: new_position_id,
+    });
+
+    (new_position_id)
+}
+
+/// Close the position if it empty
+///
+/// # Arguments
+/// - user_capability - the capability object needed to close the position
+/// - user_position - the user position to close
+///
+/// # Aborts
+/// - if hte position has any dept of collateral left
+public fun close_position(user_position: UserPosition, ctx: &TxContext) {
+    //Checks
+    assert!(user_position.owner == ctx.sender(), EUserNotAuthorizedToChangePosition);
+    assert!(user_position.debt == 0, EPositionStillHasDebt);
+
+    // Unpack the UserPosition
+    let UserPosition {
+        id: position_id,
+        owner: _,
+        vault,
+        vault_ledger,
+        debt: _,
+        last_HF: _,
+    } = user_position;
+    let vault_ledger_length = vault_ledger.length();
+    let mut index = 0;
+    while (index < vault_ledger_length) {
+        let (_coin_type, coin_amount) = vault_ledger.get_entry_by_idx(index);
+        assert!(*coin_amount == 0, EPositionStillHasCollateral);
+        index = index + 1;
+    };
+
+    vault_ledger.destroy_empty();
+    vault.destroy_empty();
+    position_id.delete();
+}
+
+/// Deposits collateral coin in the user position object
+///
+/// # Arguments
+/// - user_capability: the capability object needed to deposit in one position
+/// - coin: The coin object we want to deposit
+/// - user: The user position object we are going to deposit int
+/// - config: The current config of the DSC system
+///
+/// # Aborts:
+/// - If the user doesn't have the autoright to change the given position
+/// - If the deposited value is 0
+/// - If teh collateral we try to deposit is not supported by the protocol.
+/// - return_description
+public fun deposit_collateral<T: drop>(
+    coin: Coin<T>,
+    user_position: &mut UserPosition,
+    config: &DSCConfig,
+    ctx: &TxContext,
+) {
+    //Checks
+    assert!(user_position.owner == ctx.sender(), EUserNotAuthorizedToChangePosition);
+    assertValueIsGreaterThenZero(coin.value() as u128);
+    assertCoinIsSupported<T>(config);
+
+    //Interact
+    let key_type_name = dsc_config::get_type<T>();
+    let coin_value = coin.value();
+    if (user_position.vault.contains(key_type_name)) {
+        let mut deposited_coin: Coin<T> = user_position.vault.remove(key_type_name);
+        let (_coin, mut coin_amount) = user_position.vault_ledger.remove(&key_type_name);
+
+        coin_amount = coin_amount + (coin_value as u128);
+        coin::join(&mut deposited_coin, coin);
+
+        user_position.vault.add(key_type_name, deposited_coin);
+        user_position.vault_ledger.insert(key_type_name, coin_amount);
+    } else {
+        user_position.vault_ledger.insert(key_type_name, coin_value as u128);
+        user_position.vault.add(key_type_name, coin);
+    };
+    event::emit(NewDepositMade { coin_type: key_type_name, amount: coin_value as u128 })
+}
+
+/// Get the total value of position collateral
+///
+/// # Arguments
+/// - user_position: the position we want to get the collateral value of
+/// - oracle_holder: the oracle object that receives the price updates from the oracle network
+/// - dsc_config: The objet that holds the DSC protocol configuration, needed to fetch the prices
+///
+/// # Returns
+/// - Total price of the given position collateral
+///
+/// # Aborts
+/// - If any of the coins from the position is not supported by the DSC protocol
+/// - If no oracle is supported yet or the provided oracle is not supported
+public fun get_position_collateral_value(
+    user_position: &UserPosition,
+    oracle_holder: &OracleHolder,
+    dsc_config: &DSCConfig,
+): u128 {
+    //Checks
+    let supported_oracle_holder = dsc_config.get_supported_oracle_holder_id();
+    assert!(supported_oracle_holder.is_some(), ENoOracleSupportedYet);
+    assert!(object::id(oracle_holder) == supported_oracle_holder.borrow(), EOracleNotSupported);
+
+    let coins_ledger = user_position.vault_ledger;
+    let coins_ledger_length = coins_ledger.length();
+    let mut total_value = 0u128;
+    let mut index = 0;
+    let precision = dsc_config::get_precision(dsc_config);
+
+    while (index < coins_ledger_length) {
+        let (coin_type, amount) = coins_ledger.get_entry_by_idx(index);
+
+        // Get the price for this coin type
+        let price = oracle::get_price_by_typename(coin_type, oracle_holder, dsc_config);
+
+        let coin_value = (*amount * price) / precision;
+        total_value = total_value + coin_value;
+
+        index = index + 1;
+    };
+
+    total_value
+}
+
+/// Get the current health factor of a position with live oracle prices
+///
+/// This function always calculates the latest HF based on current oracle prices
+/// and updates the stored last_HF in the position object for monitoring purposes.
+/// This ensures arbitrageurs and liquidators always see the most current health factor.
+///
+/// # Arguments
+/// - user_position - the position we want to evaluate the HF of
+/// - dsc_config - the configuration object of the DSC system
+/// - oracle_holder - the object that holds the update prices from the oracle network
+///
+/// # Returns
+/// - The current HF of the given position based on latest oracle prices
+///
+/// # Aborts
+/// - If no oracle is supported yet or the provided oracle is not supported
+public fun get_position_HF(
+    user_position: &mut UserPosition,
+    dsc_config: &DSCConfig,
+    oracle_holder: &OracleHolder,
+): u128 {
+    //Checks
+    let supported_oracle_holder = dsc_config.get_supported_oracle_holder_id();
+    assert!(supported_oracle_holder.is_some(), ENoOracleSupportedYet);
+    assert!(object::id(oracle_holder) == supported_oracle_holder.borrow(), EOracleNotSupported);
+
+    //Effect - Calculate current HF with live oracle prices
+    let user_position_collateral_value_usd = get_position_collateral_value(
+        user_position,
+        oracle_holder,
+        dsc_config,
+    );
+    let user_debt = user_position.debt;
+    let liquidation_threshold = dsc_config.get_liquidation_threshold();
+
+    let position_HF = if (user_debt == 0) {
+        u128::max_value!()
+    } else {
+        // Optimized calculation: (collateral_value * liquidation_threshold) / debt
+        (user_position_collateral_value_usd * liquidation_threshold) / user_debt
+    };
+
+    // Update the stored HF for monitoring/tracking
+    user_position.last_HF = position_HF;
+
+    position_HF
+}
+
+/// Mint DSC to a position if the HF allows it
+///
+/// # Arguments
+/// -user_position: - the position we want to mint DSC to
+/// - amount_2_mint - the amount of DSC to mint
+/// -dsc_ledger: - the ledger of the protocol that has the treasury cap of the DSC coin
+/// -oracle_holder - the oracle object needed for HF calculation
+/// - dsc_config: - the config of the DSC protocol
+///
+/// # Aborts
+/// - If the HF of the position goes below the threshold
+/// # Returns
+public fun mint_DSC(
+    user_position: &mut UserPosition,
+    amount_2_mint: u128,
+    dsc_ledger: &mut DSCLedger,
+    oracle_holder: &OracleHolder,
+    dsc_config: &DSCConfig,
+    ctx: &mut TxContext,
+) {
+    //Checks
+    assert!(user_position.owner == ctx.sender(), EUserNotAuthorizedToChangePosition);
+    assertValueIsGreaterThenZero(amount_2_mint);
+
+    let current_user_debt = user_position.debt;
+    user_position.debt = current_user_debt + amount_2_mint;
+    let updated_HF = get_position_HF(user_position, dsc_config, oracle_holder);
+    let min_HF = dsc_config.get_min_health_factor();
+    assert!(updated_HF >= min_HF, EHealthFactorToLow);
+
+    //Mint DSC
+    let minted_coin = coin::mint(&mut dsc_ledger.treasury_cap, amount_2_mint as u64, ctx);
+    transfer::public_transfer(minted_coin, ctx.sender());
+}
+
+// ==================== Private functions ====================
+
+/// Aborts if the value is zero
+///
+/// # Arguments
+/// - value: The value we want to check if zero
+///
+/// # Aborts
+/// - if value is 0
+fun assertValueIsGreaterThenZero(value: u128) { assert!(value > 0, EAmountIsZero); }
+
+/// Aborts if the given coin is not supported by the protocol
+///
+/// # Arguments
+/// - T: type of coin to check
+/// - config: the config option that contains the allowed Coins
+///
+/// Aborts:
+/// - If the type of coin is not supported by the protocol config
+fun assertCoinIsSupported<T: drop>(config: &DSCConfig) {
+    assert!(dsc_config::is_collateral_coin_supported<T>(config), ECoinNotSupported);
+}
+
+// ==================== Test-only functions ====================
+
+#[test_only]
+/// Test helper to initialize the module
+public fun test_init(ctx: &mut TxContext) {
+    init(DSC {}, ctx);
+}
+
+#[test_only]
+/// Get the owner of a UserPosition
+public fun user_position_owner(position: &UserPosition): address {
+    position.owner
+}
+
+#[test_only]
+/// Get the debt of a UserPosition
+public fun user_position_debt(position: &UserPosition): u128 {
+    position.debt
+}
+
+#[test_only]
+/// Get the last health factor of a UserPosition
+public fun user_position_last_hf(position: &UserPosition): u128 {
+    position.last_HF
+}
+
+#[test_only]
+/// Get the vault size (number of different coin types) in a UserPosition
+public fun user_position_vault_size(position: &UserPosition): u64 {
+    position.vault_ledger.length()
+}
+
+#[test_only]
+/// Check if a user has a position in the ledger
+public fun ledger_has_user_position(ledger: &DSCLedger, user: address): bool {
+    ledger.users_positions_index.contains(user)
+}
+
+#[test_only]
+/// Get the position ID for a user from the ledger
+public fun ledger_get_user_position_id(ledger: &DSCLedger, user: address): ID {
+    *ledger.users_positions_index.borrow(user)
+}
