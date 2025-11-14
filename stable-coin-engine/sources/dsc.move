@@ -95,6 +95,21 @@ public struct UserPosition has key {
     last_HF: u128,
 }
 
+// Struct to hold coin amount and price data
+public struct CoinData has copy, drop, store {
+    amount: u128,
+    price: u128,
+}
+
+// Struct returned by get_position_info for UI consumption
+public struct PositionInfo has copy, drop {
+    coins_cache: VecMap<TypeName, CoinData>,
+    health_factor: u128,
+    debt: u128,
+    collateral_value: u128,
+    position_id: option::Option<ID>,
+}
+
 // ==================== Init function ====================
 fun init(otw: DSC, ctx: &mut TxContext) {
     let (builder, treasury_cap) = coin_registry::new_currency_with_otw<DSC>(
@@ -207,8 +222,8 @@ public fun close_position(user_position: UserPosition, ctx: &TxContext) {
 /// - If teh collateral we try to deposit is not supported by the protocol.
 /// - return_description
 public fun deposit_collateral<T: drop>(
-    coin: Coin<T>,
     user_position: &mut UserPosition,
+    coin: Coin<T>,
     config: &DSCConfig,
     ctx: &TxContext,
 ) {
@@ -508,11 +523,12 @@ public fun mint_DSC(
 ///
 /// # Arguments
 /// - T: generic type of the coin that the arbitrageur will buy at discount
-/// - user_position: the position the arbitrageur will liquidate
+/// - user_position: the position that will be liquidated
 /// - dsc_debt_to_cover: the DSC coin to cover the debt
 /// - dsc_ledger - the ledger holding the treasury cap
 /// - dsc_config: the DSC protocol configuration
 /// - oracle_holder: the oracle for price feeds
+/// - ctx - transaction context
 ///
 /// # Aborts
 /// - If the dsc amount to cover is 0
@@ -560,24 +576,95 @@ public fun liquidate<T: drop>(
     );
 
     // Burn DSC on behalf of the position owner
-    burn_dsc_internal(
-        user_position,
-        debt_to_cover,
-        dsc_debt_to_cover,
-        dsc_ledger,
-    );
+    let position_id = object::id(user_position);
+    let owner = user_position.owner;
+    let current_debt = user_position.debt;
+    assert!(debt_to_cover <= current_debt, EInsufficientDscToBurn);
+    user_position.debt = current_debt - debt_to_cover;
+
+    coin::burn(&mut dsc_ledger.treasury_cap, dsc_debt_to_cover);
+
+    // Emit event for DSC burn
+    event::emit(DSCBurned {
+        user: owner,
+        amount: debt_to_cover,
+        position_id,
+    });
 
     // Check that health factor improved
     let ending_health_factor = get_position_HF(user_position, dsc_config, oracle_holder);
     assert!(ending_health_factor > starting_health_factor, EHealthFactorToLow);
 
     event::emit(PositionLiquidated {
-        liquidated_user: user_position.owner,
+        liquidated_user: owner,
         liquidator: ctx.sender(),
         debt_covered: debt_to_cover,
         collateral_type: key_type_name,
         collateral_amount: total_collateral_to_redeem,
     });
+}
+
+/// Get complete position information for UI display
+///
+/// This is a read-only function designed to be called via DevInspect from the frontend.
+/// It returns all relevant position data including current prices, health factor, and collateral value.
+///
+/// # Arguments
+/// - user_position: the position to get information for
+/// - oracle_holder: the oracle for fetching latest prices
+/// - dsc_config: the DSC protocol configuration
+///
+/// # Returns
+/// - PositionInfo struct containing:
+///   - coins_cache: Map of coin types to their amounts and current prices
+///   - health_factor: Current health factor based on live oracle prices
+///   - debt: Total DSC debt
+///   - collateral_value: Total USD value of all collateral
+///   - position_id: The ID of the position
+///
+/// # Aborts
+/// - If no oracle is supported yet or the provided oracle is not supported
+public fun get_user_position_info(
+    user_position: &mut UserPosition,
+    oracle_holder: &OracleHolder,
+    dsc_config: &DSCConfig,
+): PositionInfo {
+    let mut coins_cache = vec_map::empty<TypeName, CoinData>();
+    let position_id = object::id(user_position);
+
+    let coins_ledger = &user_position.vault_ledger;
+    let coins_ledger_length = coins_ledger.length();
+    let mut index = 0;
+
+    while (index < coins_ledger_length) {
+        let (coin_type, amount) = coins_ledger.get_entry_by_idx(index);
+
+        let price = oracle::get_price_by_typename(coin_type, oracle_holder, dsc_config);
+
+        let coin_data = CoinData {
+            amount: *amount,
+            price,
+        };
+        coins_cache.insert(*coin_type, coin_data);
+
+        index = index + 1;
+    };
+
+    let health_factor = get_position_HF(user_position, dsc_config, oracle_holder);
+
+    let collateral_value = get_position_collateral_value(
+        user_position,
+        oracle_holder,
+        dsc_config,
+    );
+
+    PositionInfo {
+        coins_cache,
+        health_factor,
+        debt: user_position.debt,
+        collateral_value,
+        position_id: option::some(position_id),
+    }
 }
 
 // ==================== Private functions ====================
@@ -650,34 +737,6 @@ fun redeem_collateral_internal<T: drop>(
     event::emit(CollateralRedeemed {
         coin_type: *key_type_name,
         amount: amount_to_redeem,
-    });
-}
-
-/// Internal function to burn DSC on behalf of a position owner
-/// Low-level function - caller must ensure proper checks
-///
-/// # Arguments
-/// - user_position: The position whose debt will be reduced
-/// - amount_to_burn: Amount of DSC to burn
-/// - dsc_coin: The DSC coin to burn
-/// - dsc_ledger: The ledger holding the treasury cap
-fun burn_dsc_internal(
-    user_position: &mut UserPosition,
-    amount_to_burn: u128,
-    dsc_coin: Coin<DSC>,
-    dsc_ledger: &mut DSCLedger,
-) {
-    let current_debt = user_position.debt;
-    assert!(amount_to_burn <= current_debt, EInsufficientDscToBurn);
-    user_position.debt = current_debt - amount_to_burn;
-
-    coin::burn(&mut dsc_ledger.treasury_cap, dsc_coin);
-
-    // Emit event
-    event::emit(DSCBurned {
-        user: user_position.owner,
-        amount: amount_to_burn,
-        position_id: object::id(user_position),
     });
 }
 

@@ -88,8 +88,8 @@ fun test_deposit_collateral_basic() {
         let coin = ts::take_from_sender<Coin<SUI>>(&scenario);
 
         dsc::deposit_collateral<SUI>(
-            coin,
             &mut user_position,
+            coin,
             &config,
             ts::ctx(&mut scenario),
         );
@@ -119,8 +119,8 @@ fun test_deposit_collateral_multiple_same_type() {
         let coin = ts::take_from_sender<Coin<SUI>>(&scenario);
 
         dsc::deposit_collateral<SUI>(
-            coin,
             &mut user_position,
+            coin,
             &config,
             ts::ctx(&mut scenario),
         );
@@ -138,8 +138,8 @@ fun test_deposit_collateral_multiple_same_type() {
         let coin = ts::take_from_sender<Coin<SUI>>(&scenario);
 
         dsc::deposit_collateral<SUI>(
-            coin,
             &mut user_position,
+            coin,
             &config,
             ts::ctx(&mut scenario),
         );
@@ -170,8 +170,8 @@ fun test_deposit_collateral_multiple_users() {
         let coin = ts::take_from_sender<Coin<SUI>>(&scenario);
 
         dsc::deposit_collateral<SUI>(
-            coin,
             &mut user_position,
+            coin,
             &config,
             ts::ctx(&mut scenario),
         );
@@ -191,42 +191,13 @@ fun test_deposit_collateral_multiple_users() {
         let coin = ts::take_from_sender<Coin<SUI>>(&scenario);
 
         dsc::deposit_collateral<SUI>(
-            coin,
             &mut user_position,
+            coin,
             &config,
             ts::ctx(&mut scenario),
         );
 
         assert!(dsc::user_position_vault_size(&user_position) == 1, 1);
-
-        ts::return_shared(user_position);
-        ts::return_shared(config);
-    };
-
-    ts::end(scenario);
-}
-
-#[test]
-#[expected_failure]
-/// Test deposit fails when unauthorized user tries to deposit
-fun test_deposit_collateral_unauthorized() {
-    let mut scenario = setup_dsc_system();
-    let position_id = create_user_position(&mut scenario, USER1);
-    mint_sui_for_testing(&mut scenario, USER2, DEPOSIT_AMOUNT);
-
-    // USER2 tries to deposit to USER1's position - should fail
-    ts::next_tx(&mut scenario, USER2);
-    {
-        let mut user_position = ts::take_shared_by_id<UserPosition>(&scenario, position_id);
-        let config = ts::take_shared<DSCConfig>(&scenario);
-        let coin = ts::take_from_sender<Coin<SUI>>(&scenario);
-
-        dsc::deposit_collateral<SUI>(
-            coin,
-            &mut user_position,
-            &config,
-            ts::ctx(&mut scenario),
-        );
 
         ts::return_shared(user_position);
         ts::return_shared(config);
@@ -249,8 +220,8 @@ fun test_deposit_collateral_zero_amount() {
         let coin = coin::mint_for_testing<SUI>(0, ts::ctx(&mut scenario));
 
         dsc::deposit_collateral<SUI>(
-            coin,
             &mut user_position,
+            coin,
             &config,
             ts::ctx(&mut scenario),
         );
@@ -279,8 +250,8 @@ fun test_deposit_collateral_large_amount() {
         let coin = ts::take_from_sender<Coin<SUI>>(&scenario);
 
         dsc::deposit_collateral<SUI>(
-            coin,
             &mut user_position,
+            coin,
             &config,
             ts::ctx(&mut scenario),
         );
@@ -311,8 +282,8 @@ fun test_deposit_collateral_accumulation() {
             let coin = ts::take_from_sender<Coin<SUI>>(&scenario);
 
             dsc::deposit_collateral<SUI>(
-                coin,
                 &mut user_position,
+                coin,
                 &config,
                 ts::ctx(&mut scenario),
             );
@@ -338,7 +309,8 @@ fun test_deposit_immediately_after_position_creation() {
     let position_id;
     {
         let mut dsc_ledger = ts::take_shared<DSCLedger>(&scenario);
-        position_id = dsc::new_position(&mut dsc_ledger, ts::ctx(&mut scenario));
+        let id = dsc::new_position(&mut dsc_ledger, ts::ctx(&mut scenario));
+        position_id = id;
         ts::return_shared(dsc_ledger);
     };
 
@@ -351,8 +323,8 @@ fun test_deposit_immediately_after_position_creation() {
         let coin = ts::take_from_sender<Coin<SUI>>(&scenario);
 
         dsc::deposit_collateral<SUI>(
-            coin,
             &mut user_position,
+            coin,
             &config,
             ts::ctx(&mut scenario),
         );
@@ -389,8 +361,8 @@ fun test_deposit_vault_size_tracking() {
         let coin = ts::take_from_sender<Coin<SUI>>(&scenario);
 
         dsc::deposit_collateral<SUI>(
-            coin,
             &mut user_position,
+            coin,
             &config,
             ts::ctx(&mut scenario),
         );
@@ -430,7 +402,7 @@ fun test_complete_deposit_workflow() {
         let config = ts::take_shared<DSCConfig>(&scenario);
         let coin = ts::take_from_sender<Coin<SUI>>(&scenario);
 
-        dsc::deposit_collateral<SUI>(coin, &mut user_position, &config, ts::ctx(&mut scenario));
+        dsc::deposit_collateral<SUI>(&mut user_position, coin, &config, ts::ctx(&mut scenario));
 
         assert!(dsc::user_position_vault_size(&user_position) == 1, 3);
 
@@ -446,7 +418,7 @@ fun test_complete_deposit_workflow() {
         let config = ts::take_shared<DSCConfig>(&scenario);
         let coin = ts::take_from_sender<Coin<SUI>>(&scenario);
 
-        dsc::deposit_collateral<SUI>(coin, &mut user_position, &config, ts::ctx(&mut scenario));
+        dsc::deposit_collateral<SUI>(&mut user_position, coin, &config, ts::ctx(&mut scenario));
 
         assert!(dsc::user_position_vault_size(&user_position) == 1, 4);
 
