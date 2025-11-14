@@ -413,3 +413,11 @@ public fun coin_info_decimals(coin_info: &CoinInfo): u8 {
 public fun get_type<T>(): TypeName {
     type_name::with_defining_ids<T>()
 }
+
+// ==================== Test-only functions ====================
+
+#[test_only]
+/// Test helper to initialize the module
+public fun test_init(ctx: &mut TxContext) {
+    init(ctx);
+}

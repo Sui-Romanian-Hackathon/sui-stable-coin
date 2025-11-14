@@ -33,6 +33,13 @@ const ENoOracleSupportedYet: vector<u8> =
 const EOracleNotSupported: vector<u8> = b"Price feed oracle holder not supported by the protocol";
 #[error]
 const EHealthFactorToLow: vector<u8> = b"Operation puts you you position in liquidation risk";
+#[error]
+const EInsufficientCollateral: vector<u8> =
+    b"Insufficient collateral to redeem the requested amount";
+#[error]
+const ECoinTypeNotDeposited: vector<u8> = b"User has not deposited this type of coin";
+#[error]
+const EInsufficientDscToBurn: vector<u8> = b"Insufficient DSC to burn";
 
 // ==================== Events ====================
 public struct NewPositionCreated has copy, drop {
@@ -42,6 +49,16 @@ public struct NewPositionCreated has copy, drop {
 public struct NewDepositMade has copy, drop {
     coin_type: TypeName,
     amount: u128,
+}
+
+public struct CollateralRedeemed has copy, drop {
+    coin_type: TypeName,
+    amount: u128,
+}
+public struct DSCBurned has copy, drop {
+    user: address,
+    amount: u128,
+    position_id: ID,
 }
 
 // ==================== Structures====================
@@ -205,6 +222,157 @@ public fun deposit_collateral<T: drop>(
         user_position.vault.add(key_type_name, coin);
     };
     event::emit(NewDepositMade { coin_type: key_type_name, amount: coin_value as u128 })
+}
+
+/// Redeems collateral if the resulting health factor of the position allows it
+///
+/// # Arguments
+/// - T - generic type of the coin we want to redeem
+/// - user_position: -the user position that the user will redeem from
+/// - amount_2_redeem - the amount we want to redeem
+/// - dsc_config: &DSCConfig,
+/// - oracle_holder: &OracleHolder,
+///
+/// #Aborts
+/// - If the sender doesn't have the right to redeem
+/// - If the user doesn't store this type of coin
+/// - The amount to redeem is 0 or if the amount 2 redeem is larger then the amount stored in the position
+/// - By redeeming this amount the position will become eligible for liquidation
+public fun redeem_collateral<T: drop>(
+    user_position: &mut UserPosition,
+    amount_2_redeem: u128,
+    dsc_config: &DSCConfig,
+    oracle_holder: &OracleHolder,
+    ctx: &mut TxContext,
+) {
+    // Checks
+    assert!(user_position.owner == ctx.sender(), EUserNotAuthorizedToChangePosition);
+    assertValueIsGreaterThenZero(amount_2_redeem);
+    assertCoinIsSupported<T>(dsc_config);
+
+    let key_type_name = dsc_config::get_type<T>();
+
+    assert!(user_position.vault.contains(key_type_name), ECoinTypeNotDeposited);
+    assert!(user_position.vault_ledger.contains(&key_type_name), ECoinTypeNotDeposited);
+
+    let (_coin, current_amount) = user_position.vault_ledger.remove(&key_type_name);
+
+    assert!(amount_2_redeem <= current_amount, EInsufficientCollateral);
+
+    let new_amount = current_amount - amount_2_redeem;
+
+    let mut deposited_coin: Coin<T> = user_position.vault.remove(key_type_name);
+
+    let coin_to_redeem = coin::split(&mut deposited_coin, amount_2_redeem as u64, ctx);
+
+    if (new_amount > 0) {
+        user_position.vault.add(key_type_name, deposited_coin);
+        user_position.vault_ledger.insert(key_type_name, new_amount);
+    } else {
+        coin::destroy_zero(deposited_coin);
+    };
+
+    // Check health factor after redemption
+    let updated_HF = get_position_HF(user_position, dsc_config, oracle_holder);
+    let min_HF = dsc_config.get_min_health_factor();
+    assert!(updated_HF >= min_HF, EHealthFactorToLow);
+
+    // Transfer the redeemed coin to the user
+    transfer::public_transfer(coin_to_redeem, ctx.sender());
+    event::emit(CollateralRedeemed {
+        coin_type: key_type_name,
+        amount: amount_2_redeem,
+    });
+}
+
+/// Redeem deposited collateral for some DSC paid back
+///
+/// # Arguments
+/// - T - generic type of the coin we want to redeem
+/// - user_position: the user position that the user will redeem from
+/// - dsc_to_burn - the DSC coin to burn
+/// - dsc_ledger - the ledger holding the treasury cap
+/// - dsc_config: the DSC protocol configuration
+/// - oracle_holder: the oracle for price feeds
+///
+/// # Aborts
+/// - If the caller is not authorized to update this position
+/// - If the user want to burn more DSC then they owe
+/// - If the type of collateral the user wants to redeem is not deposited in the position
+/// - If the amount of DSC to burn is 0
+/// - If there's insufficient collateral of type T to cover the DSC value being burned
+public fun redeem_collateral_for_dsc<T: drop>(
+    user_position: &mut UserPosition,
+    dsc_to_burn: Coin<DSC>,
+    dsc_ledger: &mut DSCLedger,
+    dsc_config: &DSCConfig,
+    oracle_holder: &OracleHolder,
+    ctx: &mut TxContext,
+) {
+    // Checks
+    assert!(user_position.owner == ctx.sender(), EUserNotAuthorizedToChangePosition);
+    assertCoinIsSupported<T>(dsc_config);
+
+    // Get the amount of DSC to burn from the coin
+    let dsc_amount_to_burn = dsc_to_burn.value() as u128;
+    assertValueIsGreaterThenZero(dsc_amount_to_burn);
+
+    // Check user has enough debt to burn this amount
+    let current_debt = user_position.debt;
+    assert!(dsc_amount_to_burn <= current_debt, EInsufficientDscToBurn);
+
+    let key_type_name = dsc_config::get_type<T>();
+
+    // Check that the user has deposited this type of coin
+    assert!(user_position.vault.contains(key_type_name), ECoinTypeNotDeposited);
+    assert!(user_position.vault_ledger.contains(&key_type_name), ECoinTypeNotDeposited);
+
+    // Get the price of the collateral in USD
+    let collateral_price = oracle::get_price_by_typename(&key_type_name, oracle_holder, dsc_config);
+    let precision = dsc_config::get_precision(dsc_config);
+
+    // Calculate how much collateral the user should receive for the DSC they're burning
+    // DSC is pegged 1:1 with USD, so burning X DSC means we can redeem $X worth of collateral
+    // collateral_amount = (dsc_burn_amount * precision) / collateral_price
+    let collateral_amount_to_redeem = (dsc_amount_to_burn * precision) / collateral_price;
+
+    // Get current deposited amount and check we have enough
+    let (_coin, current_amount) = user_position.vault_ledger.remove(&key_type_name);
+    assert!(collateral_amount_to_redeem <= current_amount, EInsufficientCollateral);
+
+    // Update position debt
+    user_position.debt = current_debt - dsc_amount_to_burn;
+
+    // Calculate new collateral amount
+    let new_amount = current_amount - collateral_amount_to_redeem;
+
+    // Remove and split the coin
+    let mut deposited_coin: Coin<T> = user_position.vault.remove(key_type_name);
+    let coin_to_redeem = coin::split(&mut deposited_coin, collateral_amount_to_redeem as u64, ctx);
+
+    // Put remaining coin back if any left
+    if (new_amount > 0) {
+        user_position.vault.add(key_type_name, deposited_coin);
+        user_position.vault_ledger.insert(key_type_name, new_amount);
+    } else {
+        coin::destroy_zero(deposited_coin);
+    };
+
+    // Burn the DSC
+    coin::burn(&mut dsc_ledger.treasury_cap, dsc_to_burn);
+
+    // Transfer the redeemed collateral to the user
+    transfer::public_transfer(coin_to_redeem, ctx.sender());
+
+    event::emit(CollateralRedeemed {
+        coin_type: key_type_name,
+        amount: collateral_amount_to_redeem,
+    });
+    event::emit(DSCBurned {
+        user: ctx.sender(),
+        amount: dsc_amount_to_burn,
+        position_id: object::id(user_position),
+    });
 }
 
 /// Get the total value of position collateral
