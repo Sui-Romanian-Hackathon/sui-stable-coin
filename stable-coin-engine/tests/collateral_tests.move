@@ -1,7 +1,7 @@
 #[test_only]
 module dsc::collateral_tests;
 
-use dsc::dsc::{Self, DSCLedger};
+use dsc::dsc::{Self, DSCLedger, UserPosition};
 use dsc::dsc_config::{Self, DSCConfig, AdminCap};
 use sui::coin::{Self, Coin};
 use sui::sui::SUI;
@@ -77,28 +77,27 @@ fun mint_sui_for_testing(scenario: &mut Scenario, user: address, amount: u64) {
 /// Test basic deposit of collateral - happy path
 fun test_deposit_collateral_basic() {
     let mut scenario = setup_dsc_system();
-    let _position_id = create_user_position(&mut scenario, USER1);
+    let position_id = create_user_position(&mut scenario, USER1);
     mint_sui_for_testing(&mut scenario, USER1, DEPOSIT_AMOUNT);
 
     // Deposit collateral
     ts::next_tx(&mut scenario, USER1);
     {
-        let mut dsc_ledger = ts::take_shared<DSCLedger>(&scenario);
+        let mut user_position = ts::take_shared_by_id<UserPosition>(&scenario, position_id);
         let config = ts::take_shared<DSCConfig>(&scenario);
         let coin = ts::take_from_sender<Coin<SUI>>(&scenario);
 
         dsc::deposit_collateral<SUI>(
+            &mut user_position,
             coin,
-            &mut dsc_ledger,
             &config,
             ts::ctx(&mut scenario),
         );
 
         // Verify vault size increased
-        let user_position = dsc::ledger_borrow_user_position(&dsc_ledger, USER1);
-        assert!(dsc::user_position_vault_size(user_position) == 1, 0);
+        assert!(dsc::user_position_vault_size(&user_position) == 1, 0);
 
-        ts::return_shared(dsc_ledger);
+        ts::return_shared(user_position);
         ts::return_shared(config);
     };
 
@@ -109,24 +108,24 @@ fun test_deposit_collateral_basic() {
 /// Test multiple deposits of the same collateral type
 fun test_deposit_collateral_multiple_same_type() {
     let mut scenario = setup_dsc_system();
-    let _position_id = create_user_position(&mut scenario, USER1);
+    let position_id = create_user_position(&mut scenario, USER1);
 
     // First deposit
     mint_sui_for_testing(&mut scenario, USER1, DEPOSIT_AMOUNT);
     ts::next_tx(&mut scenario, USER1);
     {
-        let mut dsc_ledger = ts::take_shared<DSCLedger>(&scenario);
+        let mut user_position = ts::take_shared_by_id<UserPosition>(&scenario, position_id);
         let config = ts::take_shared<DSCConfig>(&scenario);
         let coin = ts::take_from_sender<Coin<SUI>>(&scenario);
 
         dsc::deposit_collateral<SUI>(
+            &mut user_position,
             coin,
-            &mut dsc_ledger,
             &config,
             ts::ctx(&mut scenario),
         );
 
-        ts::return_shared(dsc_ledger);
+        ts::return_shared(user_position);
         ts::return_shared(config);
     };
 
@@ -134,22 +133,21 @@ fun test_deposit_collateral_multiple_same_type() {
     mint_sui_for_testing(&mut scenario, USER1, DEPOSIT_AMOUNT);
     ts::next_tx(&mut scenario, USER1);
     {
-        let mut dsc_ledger = ts::take_shared<DSCLedger>(&scenario);
+        let mut user_position = ts::take_shared_by_id<UserPosition>(&scenario, position_id);
         let config = ts::take_shared<DSCConfig>(&scenario);
         let coin = ts::take_from_sender<Coin<SUI>>(&scenario);
 
         dsc::deposit_collateral<SUI>(
+            &mut user_position,
             coin,
-            &mut dsc_ledger,
             &config,
             ts::ctx(&mut scenario),
         );
 
         // Vault size should still be 1 (same coin type)
-        let user_position = dsc::ledger_borrow_user_position(&dsc_ledger, USER1);
-        assert!(dsc::user_position_vault_size(user_position) == 1, 0);
+        assert!(dsc::user_position_vault_size(&user_position) == 1, 0);
 
-        ts::return_shared(dsc_ledger);
+        ts::return_shared(user_position);
         ts::return_shared(config);
     };
 
@@ -160,28 +158,27 @@ fun test_deposit_collateral_multiple_same_type() {
 /// Test depositing from multiple users to their own positions
 fun test_deposit_collateral_multiple_users() {
     let mut scenario = setup_dsc_system();
-    let _position_id_1 = create_user_position(&mut scenario, USER1);
-    let _position_id_2 = create_user_position(&mut scenario, USER2);
+    let position_id_1 = create_user_position(&mut scenario, USER1);
+    let position_id_2 = create_user_position(&mut scenario, USER2);
 
     // USER1 deposits
     mint_sui_for_testing(&mut scenario, USER1, DEPOSIT_AMOUNT);
     ts::next_tx(&mut scenario, USER1);
     {
-        let mut dsc_ledger = ts::take_shared<DSCLedger>(&scenario);
+        let mut user_position = ts::take_shared_by_id<UserPosition>(&scenario, position_id_1);
         let config = ts::take_shared<DSCConfig>(&scenario);
         let coin = ts::take_from_sender<Coin<SUI>>(&scenario);
 
         dsc::deposit_collateral<SUI>(
+            &mut user_position,
             coin,
-            &mut dsc_ledger,
             &config,
             ts::ctx(&mut scenario),
         );
 
-        let user_position = dsc::ledger_borrow_user_position(&dsc_ledger, USER1);
-        assert!(dsc::user_position_vault_size(user_position) == 1, 0);
+        assert!(dsc::user_position_vault_size(&user_position) == 1, 0);
 
-        ts::return_shared(dsc_ledger);
+        ts::return_shared(user_position);
         ts::return_shared(config);
     };
 
@@ -189,21 +186,20 @@ fun test_deposit_collateral_multiple_users() {
     mint_sui_for_testing(&mut scenario, USER2, DEPOSIT_AMOUNT);
     ts::next_tx(&mut scenario, USER2);
     {
-        let mut dsc_ledger = ts::take_shared<DSCLedger>(&scenario);
+        let mut user_position = ts::take_shared_by_id<UserPosition>(&scenario, position_id_2);
         let config = ts::take_shared<DSCConfig>(&scenario);
         let coin = ts::take_from_sender<Coin<SUI>>(&scenario);
 
         dsc::deposit_collateral<SUI>(
+            &mut user_position,
             coin,
-            &mut dsc_ledger,
             &config,
             ts::ctx(&mut scenario),
         );
 
-        let user_position = dsc::ledger_borrow_user_position(&dsc_ledger, USER2);
-        assert!(dsc::user_position_vault_size(user_position) == 1, 1);
+        assert!(dsc::user_position_vault_size(&user_position) == 1, 1);
 
-        ts::return_shared(dsc_ledger);
+        ts::return_shared(user_position);
         ts::return_shared(config);
     };
 
@@ -215,22 +211,22 @@ fun test_deposit_collateral_multiple_users() {
 /// Test deposit fails with zero amount
 fun test_deposit_collateral_zero_amount() {
     let mut scenario = setup_dsc_system();
-    let _position_id = create_user_position(&mut scenario, USER1);
+    let position_id = create_user_position(&mut scenario, USER1);
 
     ts::next_tx(&mut scenario, USER1);
     {
-        let mut dsc_ledger = ts::take_shared<DSCLedger>(&scenario);
+        let mut user_position = ts::take_shared_by_id<UserPosition>(&scenario, position_id);
         let config = ts::take_shared<DSCConfig>(&scenario);
         let coin = coin::mint_for_testing<SUI>(0, ts::ctx(&mut scenario));
 
         dsc::deposit_collateral<SUI>(
+            &mut user_position,
             coin,
-            &mut dsc_ledger,
             &config,
             ts::ctx(&mut scenario),
         );
 
-        ts::return_shared(dsc_ledger);
+        ts::return_shared(user_position);
         ts::return_shared(config);
     };
 
@@ -241,7 +237,7 @@ fun test_deposit_collateral_zero_amount() {
 /// Test large deposit amounts
 fun test_deposit_collateral_large_amount() {
     let mut scenario = setup_dsc_system();
-    let _position_id = create_user_position(&mut scenario, USER1);
+    let position_id = create_user_position(&mut scenario, USER1);
 
     // Deposit a large amount (1000 SUI)
     let large_amount = 1_000_000_000_000; // 1000 SUI
@@ -249,21 +245,20 @@ fun test_deposit_collateral_large_amount() {
 
     ts::next_tx(&mut scenario, USER1);
     {
-        let mut dsc_ledger = ts::take_shared<DSCLedger>(&scenario);
+        let mut user_position = ts::take_shared_by_id<UserPosition>(&scenario, position_id);
         let config = ts::take_shared<DSCConfig>(&scenario);
         let coin = ts::take_from_sender<Coin<SUI>>(&scenario);
 
         dsc::deposit_collateral<SUI>(
+            &mut user_position,
             coin,
-            &mut dsc_ledger,
             &config,
             ts::ctx(&mut scenario),
         );
 
-        let user_position = dsc::ledger_borrow_user_position(&dsc_ledger, USER1);
-        assert!(dsc::user_position_vault_size(user_position) == 1, 0);
+        assert!(dsc::user_position_vault_size(&user_position) == 1, 0);
 
-        ts::return_shared(dsc_ledger);
+        ts::return_shared(user_position);
         ts::return_shared(config);
     };
 
@@ -274,7 +269,7 @@ fun test_deposit_collateral_large_amount() {
 /// Test sequential deposits accumulate correctly
 fun test_deposit_collateral_accumulation() {
     let mut scenario = setup_dsc_system();
-    let _position_id = create_user_position(&mut scenario, USER1);
+    let position_id = create_user_position(&mut scenario, USER1);
 
     // Perform 5 deposits
     let mut i = 0;
@@ -282,22 +277,21 @@ fun test_deposit_collateral_accumulation() {
         mint_sui_for_testing(&mut scenario, USER1, DEPOSIT_AMOUNT);
         ts::next_tx(&mut scenario, USER1);
         {
-            let mut dsc_ledger = ts::take_shared<DSCLedger>(&scenario);
+            let mut user_position = ts::take_shared_by_id<UserPosition>(&scenario, position_id);
             let config = ts::take_shared<DSCConfig>(&scenario);
             let coin = ts::take_from_sender<Coin<SUI>>(&scenario);
 
             dsc::deposit_collateral<SUI>(
+                &mut user_position,
                 coin,
-                &mut dsc_ledger,
                 &config,
                 ts::ctx(&mut scenario),
             );
 
             // Vault size should remain 1 (same coin type)
-            let user_position = dsc::ledger_borrow_user_position(&dsc_ledger, USER1);
-            assert!(dsc::user_position_vault_size(user_position) == 1, i);
+            assert!(dsc::user_position_vault_size(&user_position) == 1, i);
 
-            ts::return_shared(dsc_ledger);
+            ts::return_shared(user_position);
             ts::return_shared(config);
         };
         i = i + 1;
@@ -312,9 +306,11 @@ fun test_deposit_immediately_after_position_creation() {
     let mut scenario = setup_dsc_system();
 
     ts::next_tx(&mut scenario, USER1);
+    let position_id;
     {
         let mut dsc_ledger = ts::take_shared<DSCLedger>(&scenario);
-        let _position_id = dsc::new_position(&mut dsc_ledger, ts::ctx(&mut scenario));
+        let id = dsc::new_position(&mut dsc_ledger, ts::ctx(&mut scenario));
+        position_id = id;
         ts::return_shared(dsc_ledger);
     };
 
@@ -322,21 +318,20 @@ fun test_deposit_immediately_after_position_creation() {
     mint_sui_for_testing(&mut scenario, USER1, DEPOSIT_AMOUNT);
     ts::next_tx(&mut scenario, USER1);
     {
-        let mut dsc_ledger = ts::take_shared<DSCLedger>(&scenario);
+        let mut user_position = ts::take_shared_by_id<UserPosition>(&scenario, position_id);
         let config = ts::take_shared<DSCConfig>(&scenario);
         let coin = ts::take_from_sender<Coin<SUI>>(&scenario);
 
         dsc::deposit_collateral<SUI>(
+            &mut user_position,
             coin,
-            &mut dsc_ledger,
             &config,
             ts::ctx(&mut scenario),
         );
 
-        let user_position = dsc::ledger_borrow_user_position(&dsc_ledger, USER1);
-        assert!(dsc::user_position_vault_size(user_position) == 1, 0);
+        assert!(dsc::user_position_vault_size(&user_position) == 1, 0);
 
-        ts::return_shared(dsc_ledger);
+        ts::return_shared(user_position);
         ts::return_shared(config);
     };
 
@@ -347,36 +342,34 @@ fun test_deposit_immediately_after_position_creation() {
 /// Test that vault size correctly reflects number of different coin types
 fun test_deposit_vault_size_tracking() {
     let mut scenario = setup_dsc_system();
-    let _position_id = create_user_position(&mut scenario, USER1);
+    let position_id = create_user_position(&mut scenario, USER1);
 
     // Verify empty vault initially
     ts::next_tx(&mut scenario, USER1);
     {
-        let dsc_ledger = ts::take_shared<DSCLedger>(&scenario);
-        let user_position = dsc::ledger_borrow_user_position(&dsc_ledger, USER1);
-        assert!(dsc::user_position_vault_size(user_position) == 0, 0);
-        ts::return_shared(dsc_ledger);
+        let user_position = ts::take_shared_by_id<UserPosition>(&scenario, position_id);
+        assert!(dsc::user_position_vault_size(&user_position) == 0, 0);
+        ts::return_shared(user_position);
     };
 
     // Deposit SUI
     mint_sui_for_testing(&mut scenario, USER1, DEPOSIT_AMOUNT);
     ts::next_tx(&mut scenario, USER1);
     {
-        let mut dsc_ledger = ts::take_shared<DSCLedger>(&scenario);
+        let mut user_position = ts::take_shared_by_id<UserPosition>(&scenario, position_id);
         let config = ts::take_shared<DSCConfig>(&scenario);
         let coin = ts::take_from_sender<Coin<SUI>>(&scenario);
 
         dsc::deposit_collateral<SUI>(
+            &mut user_position,
             coin,
-            &mut dsc_ledger,
             &config,
             ts::ctx(&mut scenario),
         );
 
-        let user_position = dsc::ledger_borrow_user_position(&dsc_ledger, USER1);
-        assert!(dsc::user_position_vault_size(user_position) == 1, 1);
+        assert!(dsc::user_position_vault_size(&user_position) == 1, 1);
 
-        ts::return_shared(dsc_ledger);
+        ts::return_shared(user_position);
         ts::return_shared(config);
     };
 
@@ -389,33 +382,31 @@ fun test_deposit_vault_size_tracking() {
 /// Test complete workflow: create position, deposit multiple times, verify state
 fun test_complete_deposit_workflow() {
     let mut scenario = setup_dsc_system();
-    let _position_id = create_user_position(&mut scenario, USER1);
+    let position_id = create_user_position(&mut scenario, USER1);
 
     // Verify initial state
     ts::next_tx(&mut scenario, USER1);
     {
-        let dsc_ledger = ts::take_shared<DSCLedger>(&scenario);
-        let user_position = dsc::ledger_borrow_user_position(&dsc_ledger, USER1);
-        assert!(dsc::user_position_owner(user_position) == USER1, 0);
-        assert!(dsc::user_position_debt(user_position) == 0, 1);
-        assert!(dsc::user_position_vault_size(user_position) == 0, 2);
-        ts::return_shared(dsc_ledger);
+        let user_position = ts::take_shared_by_id<UserPosition>(&scenario, position_id);
+        assert!(dsc::user_position_owner(&user_position) == USER1, 0);
+        assert!(dsc::user_position_debt(&user_position) == 0, 1);
+        assert!(dsc::user_position_vault_size(&user_position) == 0, 2);
+        ts::return_shared(user_position);
     };
 
     // Deposit 1st time
     mint_sui_for_testing(&mut scenario, USER1, DEPOSIT_AMOUNT);
     ts::next_tx(&mut scenario, USER1);
     {
-        let mut dsc_ledger = ts::take_shared<DSCLedger>(&scenario);
+        let mut user_position = ts::take_shared_by_id<UserPosition>(&scenario, position_id);
         let config = ts::take_shared<DSCConfig>(&scenario);
         let coin = ts::take_from_sender<Coin<SUI>>(&scenario);
 
-        dsc::deposit_collateral<SUI>(coin, &mut dsc_ledger, &config, ts::ctx(&mut scenario));
+        dsc::deposit_collateral<SUI>(&mut user_position, coin, &config, ts::ctx(&mut scenario));
 
-        let user_position = dsc::ledger_borrow_user_position(&dsc_ledger, USER1);
-        assert!(dsc::user_position_vault_size(user_position) == 1, 3);
+        assert!(dsc::user_position_vault_size(&user_position) == 1, 3);
 
-        ts::return_shared(dsc_ledger);
+        ts::return_shared(user_position);
         ts::return_shared(config);
     };
 
@@ -423,27 +414,25 @@ fun test_complete_deposit_workflow() {
     mint_sui_for_testing(&mut scenario, USER1, DEPOSIT_AMOUNT * 2);
     ts::next_tx(&mut scenario, USER1);
     {
-        let mut dsc_ledger = ts::take_shared<DSCLedger>(&scenario);
+        let mut user_position = ts::take_shared_by_id<UserPosition>(&scenario, position_id);
         let config = ts::take_shared<DSCConfig>(&scenario);
         let coin = ts::take_from_sender<Coin<SUI>>(&scenario);
 
-        dsc::deposit_collateral<SUI>(coin, &mut dsc_ledger, &config, ts::ctx(&mut scenario));
+        dsc::deposit_collateral<SUI>(&mut user_position, coin, &config, ts::ctx(&mut scenario));
 
-        let user_position = dsc::ledger_borrow_user_position(&dsc_ledger, USER1);
-        assert!(dsc::user_position_vault_size(user_position) == 1, 4);
+        assert!(dsc::user_position_vault_size(&user_position) == 1, 4);
 
-        ts::return_shared(dsc_ledger);
+        ts::return_shared(user_position);
         ts::return_shared(config);
     };
 
     // Verify final state
     ts::next_tx(&mut scenario, USER1);
     {
-        let dsc_ledger = ts::take_shared<DSCLedger>(&scenario);
-        let user_position = dsc::ledger_borrow_user_position(&dsc_ledger, USER1);
-        assert!(dsc::user_position_vault_size(user_position) == 1, 5);
-        assert!(dsc::user_position_debt(user_position) == 0, 6);
-        ts::return_shared(dsc_ledger);
+        let user_position = ts::take_shared_by_id<UserPosition>(&scenario, position_id);
+        assert!(dsc::user_position_vault_size(&user_position) == 1, 5);
+        assert!(dsc::user_position_debt(&user_position) == 0, 6);
+        ts::return_shared(user_position);
     };
 
     ts::end(scenario);

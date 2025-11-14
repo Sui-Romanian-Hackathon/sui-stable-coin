@@ -1,7 +1,7 @@
 #[test_only]
 module dsc::new_position_tests;
 
-use dsc::dsc::{Self, DSCLedger};
+use dsc::dsc::{Self, DSCLedger, UserPosition};
 use sui::test_scenario::{Self as ts, Scenario};
 
 // ==================== Constants ====================
@@ -51,16 +51,22 @@ fun test_new_position_owner_verification() {
     let mut scenario = setup_dsc_protocol();
 
     ts::next_tx(&mut scenario, USER1);
+    let position_id;
     {
         let mut dsc_ledger = ts::take_shared<DSCLedger>(&scenario);
 
-        let _pos_id = dsc::new_position(&mut dsc_ledger, ts::ctx(&mut scenario));
-
-        // Verify the position is registered and has correct owner
-        let user_position = dsc::ledger_borrow_user_position(&dsc_ledger, USER1);
-        assert!(dsc::user_position_owner(user_position) == USER1, 0);
+        let pos_id = dsc::new_position(&mut dsc_ledger, ts::ctx(&mut scenario));
+        position_id = pos_id;
 
         ts::return_shared(dsc_ledger);
+    };
+
+    // Verify the position is shared and has correct owner
+    ts::next_tx(&mut scenario, USER1);
+    {
+        let user_position = ts::take_shared_by_id<UserPosition>(&scenario, position_id);
+        assert!(dsc::user_position_owner(&user_position) == USER1, 0);
+        ts::return_shared(user_position);
     };
 
     ts::end(scenario);
@@ -72,27 +78,34 @@ fun test_new_position_initial_state() {
     let mut scenario = setup_dsc_protocol();
 
     ts::next_tx(&mut scenario, USER1);
+    let position_id;
     {
         let mut dsc_ledger = ts::take_shared<DSCLedger>(&scenario);
 
-        let _pos_id = dsc::new_position(&mut dsc_ledger, ts::ctx(&mut scenario));
-
-        // Verify the position has correct initial state
-        let user_position = dsc::ledger_borrow_user_position(&dsc_ledger, USER1);
-
-        // Verify owner is USER1
-        assert!(dsc::user_position_owner(user_position) == USER1, 0);
-
-        // Verify initial debt is 0
-        assert!(dsc::user_position_debt(user_position) == 0, 1);
-
-        // Verify initial health factor is max value (u128::max_value)
-        assert!(dsc::user_position_last_hf(user_position) == std::u128::max_value!(), 2);
-
-        // Verify vault is empty
-        assert!(dsc::user_position_vault_size(user_position) == 0, 3);
+        let pos_id = dsc::new_position(&mut dsc_ledger, ts::ctx(&mut scenario));
+        position_id = pos_id;
 
         ts::return_shared(dsc_ledger);
+    };
+
+    // Verify the position has correct initial state
+    ts::next_tx(&mut scenario, USER1);
+    {
+        let user_position = ts::take_shared_by_id<UserPosition>(&scenario, position_id);
+
+        // Verify owner is USER1
+        assert!(dsc::user_position_owner(&user_position) == USER1, 0);
+
+        // Verify initial debt is 0
+        assert!(dsc::user_position_debt(&user_position) == 0, 1);
+
+        // Verify initial health factor is max value (u128::max_value)
+        assert!(dsc::user_position_last_hf(&user_position) == std::u128::max_value!(), 2);
+
+        // Verify vault is empty
+        assert!(dsc::user_position_vault_size(&user_position) == 0, 3);
+
+        ts::return_shared(user_position);
     };
 
     ts::end(scenario);
@@ -129,19 +142,17 @@ fun test_new_position_multiple_users() {
     // Verify USER1's position has correct owner
     ts::next_tx(&mut scenario, USER1);
     {
-        let dsc_ledger = ts::take_shared<DSCLedger>(&scenario);
-        let user_position = dsc::ledger_borrow_user_position(&dsc_ledger, USER1);
-        assert!(dsc::user_position_owner(user_position) == USER1, 1);
-        ts::return_shared(dsc_ledger);
+        let user_position = ts::take_shared_by_id<UserPosition>(&scenario, position_id_1);
+        assert!(dsc::user_position_owner(&user_position) == USER1, 1);
+        ts::return_shared(user_position);
     };
 
     // Verify USER2's position has correct owner
     ts::next_tx(&mut scenario, USER2);
     {
-        let dsc_ledger = ts::take_shared<DSCLedger>(&scenario);
-        let user_position = dsc::ledger_borrow_user_position(&dsc_ledger, USER2);
-        assert!(dsc::user_position_owner(user_position) == USER2, 2);
-        ts::return_shared(dsc_ledger);
+        let user_position = ts::take_shared_by_id<UserPosition>(&scenario, position_id_2);
+        assert!(dsc::user_position_owner(&user_position) == USER2, 2);
+        ts::return_shared(user_position);
     };
 
     ts::end(scenario);
@@ -268,11 +279,15 @@ fun test_new_position_returned_id_consistency() {
         let stored_id = dsc::ledger_get_user_position_id(&dsc_ledger, USER1);
         assert!(stored_id == position_id_returned, 0);
 
-        // Verify position owner is USER1
-        let user_position = dsc::ledger_borrow_user_position(&dsc_ledger, USER1);
-        assert!(dsc::user_position_owner(user_position) == USER1, 1);
-
         ts::return_shared(dsc_ledger);
+    };
+
+    // Verify position owner is USER1 via shared object
+    ts::next_tx(&mut scenario, USER1);
+    {
+        let user_position = ts::take_shared_by_id<UserPosition>(&scenario, position_id_returned);
+        assert!(dsc::user_position_owner(&user_position) == USER1, 1);
+        ts::return_shared(user_position);
     };
 
     ts::end(scenario);

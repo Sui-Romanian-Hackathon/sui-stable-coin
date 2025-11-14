@@ -82,11 +82,11 @@ public struct DSC has drop {}
 public struct DSCLedger has key {
     id: UID,
     treasury_cap: TreasuryCap<DSC>,
-    users_positions_index: Table<address, UserPosition>,
+    users_positions_index: Table<address, ID>,
 }
 
 // Object that stores the position of a user
-public struct UserPosition has key, store {
+public struct UserPosition has key {
     id: UID,
     owner: address,
     vault: ObjectBag,
@@ -147,7 +147,7 @@ fun init(otw: DSC, ctx: &mut TxContext) {
 /// - ctx: transaction context
 ///
 /// # Returns
-/// - Returns the ID of the new user position
+/// - Returns the IDs of the usr capability and the id of the new user position
 public fun new_position(dsc_ledger: &mut DSCLedger, ctx: &mut TxContext): (ID) {
     let owner = ctx.sender();
     // Create new position object
@@ -160,8 +160,11 @@ public fun new_position(dsc_ledger: &mut DSCLedger, ctx: &mut TxContext): (ID) {
         last_HF: u128::max_value!(),
     };
     let new_position_id = object::id(&new_position_obj);
-    // Update the dsc ledger to include this new object - store the entire object
-    dsc_ledger.users_positions_index.add(owner, new_position_obj);
+    // Update the dsc ledger to include this new object
+    dsc_ledger.users_positions_index.add(owner, new_position_id);
+    // make the user position shared
+    transfer::share_object(new_position_obj);
+    // send the user capability to the
 
     event::emit(NewPositionCreated {
         new_position_id: new_position_id,
@@ -173,20 +176,14 @@ public fun new_position(dsc_ledger: &mut DSCLedger, ctx: &mut TxContext): (ID) {
 /// Close the position if it empty
 ///
 /// # Arguments
-/// - dsc_ledger - the DSC ledger containing user positions
-/// - ctx - transaction context
+/// - user_capability - the capability object needed to close the position
+/// - user_position - the user position to close
 ///
 /// # Aborts
-/// - if the position has any debt or collateral left
-/// - if the user doesn't have a position
-public fun close_position(dsc_ledger: &mut DSCLedger, ctx: &TxContext) {
-    let sender = ctx.sender();
-
-    // Remove the user position from the ledger
-    let user_position = dsc_ledger.users_positions_index.remove(sender);
-
+/// - if hte position has any dept of collateral left
+public fun close_position(user_position: UserPosition, ctx: &TxContext) {
     //Checks
-    assert!(user_position.owner == sender, EUserNotAuthorizedToChangePosition);
+    assert!(user_position.owner == ctx.sender(), EUserNotAuthorizedToChangePosition);
     assert!(user_position.debt == 0, EPositionStillHasDebt);
 
     // Unpack the UserPosition
@@ -214,27 +211,26 @@ public fun close_position(dsc_ledger: &mut DSCLedger, ctx: &TxContext) {
 /// Deposits collateral coin in the user position object
 ///
 /// # Arguments
+/// - user_capability: the capability object needed to deposit in one position
 /// - coin: The coin object we want to deposit
-/// - dsc_ledger: The DSC ledger containing user positions
+/// - user: The user position object we are going to deposit int
 /// - config: The current config of the DSC system
-/// - ctx: Transaction context
 ///
 /// # Aborts:
-/// - If the user doesn't have a position yet
+/// - If the user doesn't have the autoright to change the given position
 /// - If the deposited value is 0
-/// - If the collateral we try to deposit is not supported by the protocol
+/// - If teh collateral we try to deposit is not supported by the protocol.
+/// - return_description
 public fun deposit_collateral<T: drop>(
+    user_position: &mut UserPosition,
     coin: Coin<T>,
-    dsc_ledger: &mut DSCLedger,
     config: &DSCConfig,
     ctx: &TxContext,
 ) {
     //Checks
+    assert!(user_position.owner == ctx.sender(), EUserNotAuthorizedToChangePosition);
     assertValueIsGreaterThenZero(coin.value() as u128);
     assertCoinIsSupported<T>(config);
-
-    let sender = ctx.sender();
-    let user_position = dsc_ledger.users_positions_index.borrow_mut(sender);
 
     //Interact
     let key_type_name = dsc_config::get_type<T>();
@@ -259,30 +255,27 @@ public fun deposit_collateral<T: drop>(
 ///
 /// # Arguments
 /// - T - generic type of the coin we want to redeem
+/// - user_position: -the user position that the user will redeem from
 /// - amount_2_redeem - the amount we want to redeem
-/// - dsc_ledger - the DSC ledger containing user positions
-/// - dsc_config - the DSC protocol configuration
-/// - oracle_holder - the oracle for price feeds
-/// - ctx - transaction context
+/// - dsc_config: &DSCConfig,
+/// - oracle_holder: &OracleHolder,
 ///
 /// #Aborts
-/// - If the user doesn't have a position
+/// - If the sender doesn't have the right to redeem
 /// - If the user doesn't store this type of coin
 /// - The amount to redeem is 0 or if the amount 2 redeem is larger then the amount stored in the position
 /// - By redeeming this amount the position will become eligible for liquidation
 public fun redeem_collateral<T: drop>(
+    user_position: &mut UserPosition,
     amount_2_redeem: u128,
-    dsc_ledger: &mut DSCLedger,
     dsc_config: &DSCConfig,
     oracle_holder: &OracleHolder,
     ctx: &mut TxContext,
 ) {
     // Checks
+    assert!(user_position.owner == ctx.sender(), EUserNotAuthorizedToChangePosition);
     assertValueIsGreaterThenZero(amount_2_redeem);
     assertCoinIsSupported<T>(dsc_config);
-
-    let sender = ctx.sender();
-    let user_position = dsc_ledger.users_positions_index.borrow_mut(sender);
 
     let key_type_name = dsc_config::get_type<T>();
 
@@ -312,7 +305,7 @@ public fun redeem_collateral<T: drop>(
     assert!(updated_HF >= min_HF, EHealthFactorToLow);
 
     // Transfer the redeemed coin to the user
-    transfer::public_transfer(coin_to_redeem, sender);
+    transfer::public_transfer(coin_to_redeem, ctx.sender());
     event::emit(CollateralRedeemed {
         coin_type: key_type_name,
         amount: amount_2_redeem,
@@ -323,19 +316,20 @@ public fun redeem_collateral<T: drop>(
 ///
 /// # Arguments
 /// - T - generic type of the coin we want to redeem
+/// - user_position: the user position that the user will redeem from
 /// - dsc_to_burn - the DSC coin to burn
-/// - dsc_ledger - the ledger holding the treasury cap and user positions
+/// - dsc_ledger - the ledger holding the treasury cap
 /// - dsc_config: the DSC protocol configuration
 /// - oracle_holder: the oracle for price feeds
-/// - ctx - transaction context
 ///
 /// # Aborts
-/// - If the user doesn't have a position
+/// - If the caller is not authorized to update this position
 /// - If the user want to burn more DSC then they owe
 /// - If the type of collateral the user wants to redeem is not deposited in the position
 /// - If the amount of DSC to burn is 0
 /// - If there's insufficient collateral of type T to cover the DSC value being burned
 public fun redeem_collateral_for_dsc<T: drop>(
+    user_position: &mut UserPosition,
     dsc_to_burn: Coin<DSC>,
     dsc_ledger: &mut DSCLedger,
     dsc_config: &DSCConfig,
@@ -343,13 +337,11 @@ public fun redeem_collateral_for_dsc<T: drop>(
     ctx: &mut TxContext,
 ) {
     // Checks
+    assert!(user_position.owner == ctx.sender(), EUserNotAuthorizedToChangePosition);
     assertCoinIsSupported<T>(dsc_config);
 
     let dsc_amount_to_burn = dsc_to_burn.value() as u128;
     assertValueIsGreaterThenZero(dsc_amount_to_burn);
-
-    let sender = ctx.sender();
-    let user_position = dsc_ledger.users_positions_index.borrow_mut(sender);
 
     let current_debt = user_position.debt;
     assert!(dsc_amount_to_burn <= current_debt, EInsufficientDscToBurn);
@@ -383,19 +375,18 @@ public fun redeem_collateral_for_dsc<T: drop>(
         coin::destroy_zero(deposited_coin);
     };
 
-    let position_id = object::id(user_position);
     coin::burn(&mut dsc_ledger.treasury_cap, dsc_to_burn);
 
-    transfer::public_transfer(coin_to_redeem, sender);
+    transfer::public_transfer(coin_to_redeem, ctx.sender());
 
     event::emit(CollateralRedeemed {
         coin_type: key_type_name,
         amount: collateral_amount_to_redeem,
     });
     event::emit(DSCBurned {
-        user: sender,
+        user: ctx.sender(),
         amount: dsc_amount_to_burn,
-        position_id,
+        position_id: object::id(user_position),
     });
 }
 
@@ -494,17 +485,17 @@ public fun get_position_HF(
 /// Mint DSC to a position if the HF allows it
 ///
 /// # Arguments
+/// -user_position: - the position we want to mint DSC to
 /// - amount_2_mint - the amount of DSC to mint
-/// - dsc_ledger - the ledger of the protocol that has the treasury cap of the DSC coin and user positions
-/// - oracle_holder - the oracle object needed for HF calculation
-/// - dsc_config - the config of the DSC protocol
-/// - ctx - transaction context
+/// -dsc_ledger: - the ledger of the protocol that has the treasury cap of the DSC coin
+/// -oracle_holder - the oracle object needed for HF calculation
+/// - dsc_config: - the config of the DSC protocol
 ///
 /// # Aborts
-/// - If the user doesn't have a position
 /// - If the HF of the position goes below the threshold
-/// - If the amount to mint is 0
+/// # Returns
 public fun mint_DSC(
+    user_position: &mut UserPosition,
     amount_2_mint: u128,
     dsc_ledger: &mut DSCLedger,
     oracle_holder: &OracleHolder,
@@ -512,10 +503,8 @@ public fun mint_DSC(
     ctx: &mut TxContext,
 ) {
     //Checks
+    assert!(user_position.owner == ctx.sender(), EUserNotAuthorizedToChangePosition);
     assertValueIsGreaterThenZero(amount_2_mint);
-
-    let sender = ctx.sender();
-    let user_position = dsc_ledger.users_positions_index.borrow_mut(sender);
 
     let current_user_debt = user_position.debt;
     user_position.debt = current_user_debt + amount_2_mint;
@@ -525,7 +514,7 @@ public fun mint_DSC(
 
     //Mint DSC
     let minted_coin = coin::mint(&mut dsc_ledger.treasury_cap, amount_2_mint as u64, ctx);
-    transfer::public_transfer(minted_coin, sender);
+    transfer::public_transfer(minted_coin, ctx.sender());
 }
 
 /// Allow an arbitrageur to liquidate a position if its health factor drops bellow the threshold.
@@ -534,21 +523,20 @@ public fun mint_DSC(
 ///
 /// # Arguments
 /// - T: generic type of the coin that the arbitrageur will buy at discount
-/// - user_to_liquidate: the address of the user whose position will be liquidated
+/// - user_position: the position that will be liquidated
 /// - dsc_debt_to_cover: the DSC coin to cover the debt
-/// - dsc_ledger - the ledger holding the treasury cap and user positions
+/// - dsc_ledger - the ledger holding the treasury cap
 /// - dsc_config: the DSC protocol configuration
 /// - oracle_holder: the oracle for price feeds
 /// - ctx - transaction context
 ///
 /// # Aborts
-/// - If the user to liquidate doesn't have a position
 /// - If the dsc amount to cover is 0
 /// - If the collateral that the arbitrageur will buy is not part of the position
 /// - If the HF of the position is not below the min threshold
 /// - If the HF did not improve after the liquidation
 public fun liquidate<T: drop>(
-    user_to_liquidate: address,
+    user_position: &mut UserPosition,
     dsc_debt_to_cover: Coin<DSC>,
     dsc_ledger: &mut DSCLedger,
     dsc_config: &DSCConfig,
@@ -558,16 +546,10 @@ public fun liquidate<T: drop>(
     let debt_to_cover = dsc_debt_to_cover.value() as u128;
     assertValueIsGreaterThenZero(debt_to_cover);
 
-    // Get position reference for initial checks and store starting HF
-    let starting_health_factor = {
-        let user_position = dsc_ledger.users_positions_index.borrow_mut(user_to_liquidate);
-
-        // Check if the position can be liquidated (HF below minimum)
-        let starting_hf = get_position_HF(user_position, dsc_config, oracle_holder);
-        let min_HF = dsc_config.get_min_health_factor();
-        assert!(starting_hf < min_HF, EPositionHOk);
-        starting_hf
-    };
+    // Check if the position can be liquidated (HF below minimum)
+    let starting_health_factor = get_position_HF(user_position, dsc_config, oracle_holder);
+    let min_HF = dsc_config.get_min_health_factor();
+    assert!(starting_health_factor < min_HF, EPositionHOk);
 
     let key_type_name = dsc_config::get_type<T>();
 
@@ -585,25 +567,20 @@ public fun liquidate<T: drop>(
     let total_collateral_to_redeem = token_amount_from_debt_covered + bonus_amount;
 
     // Redeem collateral without owner check
-    {
-        let user_position = dsc_ledger.users_positions_index.borrow_mut(user_to_liquidate);
-        redeem_collateral_internal<T>(
-            user_position,
-            total_collateral_to_redeem,
-            ctx.sender(), // Send to liquidator
-            &key_type_name,
-            ctx,
-        );
-    };
+    redeem_collateral_internal<T>(
+        user_position,
+        total_collateral_to_redeem,
+        ctx.sender(), // Send to liquidator
+        &key_type_name,
+        ctx,
+    );
 
     // Burn DSC on behalf of the position owner
-    let (position_id, owner) = {
-        let user_position = dsc_ledger.users_positions_index.borrow_mut(user_to_liquidate);
-        let current_debt = user_position.debt;
-        assert!(debt_to_cover <= current_debt, EInsufficientDscToBurn);
-        user_position.debt = current_debt - debt_to_cover;
-        (object::id(user_position), user_position.owner)
-    };
+    let position_id = object::id(user_position);
+    let owner = user_position.owner;
+    let current_debt = user_position.debt;
+    assert!(debt_to_cover <= current_debt, EInsufficientDscToBurn);
+    user_position.debt = current_debt - debt_to_cover;
 
     coin::burn(&mut dsc_ledger.treasury_cap, dsc_debt_to_cover);
 
@@ -615,14 +592,11 @@ public fun liquidate<T: drop>(
     });
 
     // Check that health factor improved
-    {
-        let user_position = dsc_ledger.users_positions_index.borrow_mut(user_to_liquidate);
-        let ending_health_factor = get_position_HF(user_position, dsc_config, oracle_holder);
-        assert!(ending_health_factor > starting_health_factor, EHealthFactorToLow);
-    };
+    let ending_health_factor = get_position_HF(user_position, dsc_config, oracle_holder);
+    assert!(ending_health_factor > starting_health_factor, EHealthFactorToLow);
 
     event::emit(PositionLiquidated {
-        liquidated_user: user_to_liquidate,
+        liquidated_user: owner,
         liquidator: ctx.sender(),
         debt_covered: debt_to_cover,
         collateral_type: key_type_name,
@@ -634,13 +608,11 @@ public fun liquidate<T: drop>(
 ///
 /// This is a read-only function designed to be called via DevInspect from the frontend.
 /// It returns all relevant position data including current prices, health factor, and collateral value.
-/// The function retrieves the position based on the sender's address.
 ///
 /// # Arguments
+/// - user_position: the position to get information for
 /// - oracle_holder: the oracle for fetching latest prices
 /// - dsc_config: the DSC protocol configuration
-/// - dsc_ledger: the DSC ledger containing user positions
-/// - ctx: transaction context to identify the sender
 ///
 /// # Returns
 /// - PositionInfo struct containing:
@@ -648,30 +620,16 @@ public fun liquidate<T: drop>(
 ///   - health_factor: Current health factor based on live oracle prices
 ///   - debt: Total DSC debt
 ///   - collateral_value: Total USD value of all collateral
-///   - position_id: Optional ID of the position (None if no position exists)
+///   - position_id: The ID of the position
 ///
 /// # Aborts
 /// - If no oracle is supported yet or the provided oracle is not supported
 public fun get_user_position_info(
+    user_position: &mut UserPosition,
     oracle_holder: &OracleHolder,
     dsc_config: &DSCConfig,
-    dsc_ledger: &mut DSCLedger,
-    ctx: &TxContext,
 ): PositionInfo {
     let mut coins_cache = vec_map::empty<TypeName, CoinData>();
-
-    // Check if user has a position
-    if (!dsc_ledger.users_positions_index.contains(ctx.sender())) {
-        return PositionInfo {
-            coins_cache,
-            health_factor: u128::max_value!(),
-            debt: 0,
-            collateral_value: 0,
-            position_id: option::none(),
-        }
-    };
-
-    let user_position = dsc_ledger.users_positions_index.borrow_mut(ctx.sender());
     let position_id = object::id(user_position);
 
     let coins_ledger = &user_position.vault_ledger;
@@ -844,20 +802,5 @@ public fun ledger_has_user_position(ledger: &DSCLedger, user: address): bool {
 #[test_only]
 /// Get the position ID for a user from the ledger
 public fun ledger_get_user_position_id(ledger: &DSCLedger, user: address): ID {
-    object::id(ledger.users_positions_index.borrow(user))
-}
-
-#[test_only]
-/// Get a reference to a user's position from the ledger
-public fun ledger_borrow_user_position(ledger: &DSCLedger, user: address): &UserPosition {
-    ledger.users_positions_index.borrow(user)
-}
-
-#[test_only]
-/// Get a mutable reference to a user's position from the ledger
-public fun ledger_borrow_mut_user_position(
-    ledger: &mut DSCLedger,
-    user: address,
-): &mut UserPosition {
-    ledger.users_positions_index.borrow_mut(user)
+    *ledger.users_positions_index.borrow(user)
 }
