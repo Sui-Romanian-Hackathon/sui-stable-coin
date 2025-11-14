@@ -12,7 +12,7 @@ export default function Home() {
 
     return (
         <div
-            className={`${darkMode && 'dark'} min-h-screen flex-col flex  bg-white dark:bg-black text-black dark:text-white transition-all duration-300`}
+            className={`${darkMode && 'dark'} min-h-screen flex-col flex  bg-gray-50 dark:bg-gray-950 text-black dark:text-white transition-all duration-300`}
         >
             <Navbar />
             {!account ? (

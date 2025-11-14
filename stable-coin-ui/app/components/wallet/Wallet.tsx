@@ -25,7 +25,7 @@ export default function Wallet() {
 
     return (
         <div
-            className={`${darkMode && 'dark'} flex flex-1  pt-10 bg-white dark:bg-gray-900 text-black dark:text-white transition-all duration-300`}
+            className={`${darkMode && 'dark'} flex flex-1  pt-10 bg-gray-50 dark:bg-gray-950 text-black dark:text-white transition-all duration-300`}
         >
             <div className="flex-1 flex">
                 {account ? (

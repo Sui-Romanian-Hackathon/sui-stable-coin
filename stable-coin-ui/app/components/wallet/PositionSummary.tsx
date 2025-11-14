@@ -1,8 +1,8 @@
 export default function PositionSummary() {
     return (
-        <div className="bg-gray-100 dark:bg-gray-800 flex  rounded-xl py-10">
-            <div className="px-5 w-full flex flex-col space-y-6">
-                <label className="font-bold text-sm text-gray-500">
+        <div className="bg-gray-100 dark:bg-slate-800 flex  rounded-xl py-10">
+            <div className="w-full flex flex-col">
+                <label className="font-bold text-sm text-gray-500 pb-5 px-5">
                     Position Summary
                 </label>
 
@@ -18,7 +18,7 @@ export default function PositionSummary() {
 
 function Row({ label, value }: { label: string; value: string }) {
     return (
-        <div className="flex flex-row justify-between text-xl font-semibold">
+        <div className="flex flex-row justify-between text-lg font-semibold hover:bg-gray-200 dark:hover:bg-slate-700 p-4 rounded-xl transition">
             <span>{label}</span>
             <span>{value}</span>
         </div>

@@ -77,7 +77,7 @@ export function ChatPopup({ isLoggedIn, getUserData }: ChatPopupProps) {
     return (
         <>
             <button
-                className="fixed bottom-8 right-8 p-4 rounded-full bg-blue-600 text-white shadow-lg hover:bg-blue-700 transition"
+                className="fixed bottom-8 right-8 p-4 rounded-full bg-gray-200 dark:bg-slate-700 text-gray-700 dark:text-gray-300 shadow-lg hover:bg-blue-900 hover:text-blue-200 transition-colors duration-200"
                 onClick={() => setOpen(!open)}
             >
                 {open ? <FaTimes /> : <FaComments />}
@@ -85,30 +85,30 @@ export function ChatPopup({ isLoggedIn, getUserData }: ChatPopupProps) {
 
             {/* Chat popup */}
             {open && (
-                <div className="fixed bottom-20 right-8 w-80 h-96 bg-white dark:bg-neutral-900 border rounded-lg shadow-lg flex flex-col overflow-hidden">
-                    <div className="flex-1 p-4 overflow-y-auto space-y-2">
+                <div className="fixed bottom-20 right-8 w-80 h-96 bg-gray-100 dark:bg-slate-800 rounded-xl shadow-lg flex flex-col overflow-hidden border border-blue-100 dark:border-blue-950">
+                    <div className="flex-1 p-4 overflow-y-auto space-y-3">
                         {messages.map((m, i) => (
                             <div
                                 key={i}
-                                className={`p-2 rounded max-w-[80%] ${
+                                className={`p-3 rounded-xl max-w-[80%] ${
                                     m.from === 'user'
-                                        ? 'bg-blue-100 text-blue-900 self-end ml-auto'
-                                        : 'bg-gray-100 dark:bg-neutral-800 text-gray-900 dark:text-gray-100 self-start'
+                                        ? 'bg-blue-900 text-blue-100 self-end ml-auto'
+                                        : 'bg-gray-200 dark:bg-slate-700 text-gray-900 dark:text-gray-100 self-start'
                                 }`}
                             >
                                 {m.text}
                             </div>
                         ))}
                         {loading && (
-                            <p className="text-sm text-gray-400">Thinking...</p>
+                            <p className="text-sm text-gray-500 dark:text-gray-400">Thinking...</p>
                         )}
                         <div ref={messagesEndRef} />
                     </div>
 
-                    <div className="p-2 border-t flex gap-2 bg-gray-50 dark:bg-neutral-800">
+                    <div className="p-4 border-t border-blue-100 dark:border-blue-950 flex gap-2 bg-gray-100 dark:bg-slate-800">
                         <input
                             type="text"
-                            className="flex-1 border rounded px-2 py-1 focus:outline-none focus:ring dark:bg-neutral-700 dark:text-white"
+                            className="flex-1 rounded-xl px-4 py-2 bg-white dark:bg-slate-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 transition"
                             placeholder={
                                 isLoggedIn
                                     ? 'Ask about your account...'
@@ -119,7 +119,7 @@ export function ChatPopup({ isLoggedIn, getUserData }: ChatPopupProps) {
                             onKeyDown={(e) => e.key === 'Enter' && handleSend()}
                         />
                         <button
-                            className="px-3 py-1 bg-blue-600 text-white rounded hover:bg-blue-700"
+                            className="px-4 py-2 bg-gray-200 dark:bg-slate-700 text-gray-700 dark:text-gray-300 rounded-xl hover:bg-blue-900 hover:text-blue-200 transition-colors duration-200 font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
                             onClick={handleSend}
                             disabled={loading}
                         >

@@ -5,7 +5,7 @@ export default function AccountInfo({ address }: { address: string }) {
                 <label className="font-bold text-xs text-teal-400">
                     Address
                 </label>
-                <div className="break-all text-sm text-gray-500 font-bold">
+                <div className="break-all text-sm text-gray-600 dark:text-gray-400 font-bold">
                     <span>{address}</span>
                 </div>
             </div>

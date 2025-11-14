@@ -9,6 +9,21 @@ export function Collateral() {
         'ethereum',
         'solana',
         'polkadot',
+        'bitcoin',
+        'sui',
+        'ethereum',
+        'solana',
+        'polkadot',
+        'bitcoin',
+        'sui',
+        'ethereum',
+        'solana',
+        'polkadot',
+        'bitcoin',
+        'sui',
+        'ethereum',
+        'solana',
+        'polkadot',
     ]
 
     const [coins, setCoins] = useState<Coin[]>([])
@@ -52,24 +67,19 @@ export function Collateral() {
     }, [])
 
     return (
-        <div className="flex flex-col md:flex-row justify-between md:space-x-2 bg-slate-900 rounded-xl">
-            <div className="md:flex-1 bg-slate-800 rounded-xl mb-2">
+        <div className="flex flex-col md:flex-row justify-center items-start md:space-x-7 bg-gray-200 dark:bg-slate-900 rounded-xl p-5 mb-5">
+            <div className="w-full flex-1 bg-gray-100 dark:bg-slate-800 rounded-xl mb-2 md:mb-0">
                 <div className="px-5 pt-10 pb-4 w-full flex flex-col space-y-6">
-                    <label className="font-bold text-sm text-gray-500">
+                    <label className="font-bold text-sm text-gray-600 dark:text-gray-400">
                         Collateral Asset
                     </label>
                 </div>
                 {coins?.map((c) => (
-                    <CoinRow
-                        key={c.symbol}
-                        coin={c}
-                        selected={selectedCoin?.symbol === c.symbol}
-                        onSelect={() => setSelectedCoin(c)}
-                    />
+                    <CoinRow key={c.symbol} coin={c} />
                 ))}
             </div>
 
-            <div className="md:flex-1 bg-slate-900 rounded-xl flex flex-col space-y-2 mb-2">
+            <div className="w-full flex-1 bg-gray-200 dark:bg-slate-900 rounded-xl flex flex-col">
                 <PositionSummary />
             </div>
         </div>
