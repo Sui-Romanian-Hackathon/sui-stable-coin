@@ -1,8 +1,8 @@
 export default function PositionSummary() {
     return (
-        <div className="bg-gray-100 dark:bg-slate-800 flex  rounded-xl py-10">
-            <div className="w-full flex flex-col">
-                <label className="font-bold text-sm text-gray-500 pb-5 px-5">
+        <div className="flex rounded-xl p-6">
+            <div className="w-full flex flex-col space-y-1">
+                <label className="font-bold text-sm text-blue-600 dark:text-blue-400 uppercase tracking-wide pb-4">
                     Position Summary
                 </label>
 
@@ -10,17 +10,17 @@ export default function PositionSummary() {
                 <Row label="Collateral Value" value="0.0000 USDC" />
                 <Row label="Borrowed Amount" value="0.0000 USDC" />
                 <Row label="Available to Borrow" value="0.0000 USDC" />
-                <Row label="Health Factor" value="0.00" />
+                <Row label="Health Factor" value="0.00" highlight />
             </div>
         </div>
     )
 }
 
-function Row({ label, value }: { label: string; value: string }) {
+function Row({ label, value, highlight }: { label: string; value: string; highlight?: boolean }) {
     return (
-        <div className="flex flex-row justify-between text-lg font-semibold hover:bg-gray-200 dark:hover:bg-slate-700 p-4 rounded-xl transition">
+        <div className={`flex flex-row justify-between text-sm md:text-base font-medium hover:bg-gray-100/50 dark:hover:bg-slate-700/50 p-3 rounded-lg transition ${highlight ? 'text-blue-600 dark:text-blue-400 font-semibold' : 'text-gray-700 dark:text-gray-300'}`}>
             <span>{label}</span>
-            <span>{value}</span>
+            <span className="font-semibold">{value}</span>
         </div>
     )
 }

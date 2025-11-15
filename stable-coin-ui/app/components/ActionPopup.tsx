@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useRef, useEffect } from 'react'
+import { createPortal } from 'react-dom'
 
 interface ActionPopupProps {
     isOpen: boolean
@@ -22,7 +23,12 @@ export default function ActionPopup({
     position,
 }: ActionPopupProps) {
     const [inputValue, setInputValue] = useState('')
+    const [mounted, setMounted] = useState(false)
     const popupRef = useRef<HTMLDivElement>(null)
+
+    useEffect(() => {
+        setMounted(true)
+    }, [])
 
     useEffect(() => {
         const handleClickOutside = (event: MouseEvent) => {
@@ -59,16 +65,20 @@ export default function ActionPopup({
         }
     }
 
-    if (!isOpen) return null
+    if (!isOpen || !mounted) return null
 
     const style = position
-        ? { top: `${position.top}px`, left: `${position.left}px` }
+        ? {
+            top: `${position.top}px`,
+            left: `${position.left}px`,
+            transform: 'translateX(-50%)' // Center horizontally relative to button
+          }
         : {}
 
-    return (
+    const popupContent = (
         <div
             ref={popupRef}
-            className="fixed z-50 bg-gray-100 dark:bg-slate-800 border border-blue-100 dark:border-blue-950 rounded-xl shadow-lg p-4 min-w-[280px]"
+            className="fixed z-50 bg-white/90 dark:bg-slate-800/90 backdrop-blur-md border border-gray-200 dark:border-slate-700 rounded-xl shadow-xl p-5 min-w-[300px]"
             style={style}
         >
             <div className="flex flex-col space-y-3">
@@ -78,7 +88,7 @@ export default function ActionPopup({
 
                 <input
                     type="text"
-                    className="w-full rounded-xl px-4 py-2 bg-white dark:bg-slate-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 transition"
+                    className="w-full rounded-xl px-4 py-2 bg-white dark:bg-slate-900 text-gray-900 dark:text-gray-100 placeholder-gray-400 dark:placeholder-gray-500 border border-gray-200 dark:border-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500 dark:focus:ring-slate-600 transition"
                     placeholder={inputPlaceholder}
                     value={inputValue}
                     onChange={(e) => setInputValue(e.target.value)}
@@ -88,13 +98,13 @@ export default function ActionPopup({
 
                 <div className="flex gap-2 justify-end">
                     <button
-                        className="px-4 py-2 bg-gray-200 dark:bg-slate-700 text-gray-700 dark:text-gray-300 rounded-xl hover:bg-gray-300 dark:hover:bg-slate-600 transition-colors duration-200 font-semibold text-sm"
+                        className="px-4 py-2 bg-gray-200/80 dark:bg-slate-700/80 backdrop-blur-sm text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-300 dark:hover:bg-slate-600 transition-colors duration-200 font-semibold text-sm"
                         onClick={onClose}
                     >
                         Cancel
                     </button>
                     <button
-                        className="px-4 py-2 bg-teal-600 hover:bg-teal-700 text-white rounded-xl transition-colors duration-200 font-semibold text-sm disabled:opacity-50 disabled:cursor-not-allowed"
+                        className="px-4 py-2 bg-blue-500 hover:bg-blue-600 text-white rounded-lg transition-colors duration-200 font-semibold text-sm disabled:opacity-50 disabled:cursor-not-allowed shadow-lg"
                         onClick={handleExecute}
                         disabled={!inputValue.trim()}
                     >
@@ -104,4 +114,6 @@ export default function ActionPopup({
             </div>
         </div>
     )
+
+    return createPortal(popupContent, document.body)
 }

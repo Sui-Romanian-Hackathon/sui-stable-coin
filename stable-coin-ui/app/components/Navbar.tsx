@@ -3,22 +3,43 @@
 import { useDarkMode } from '@/app/context/DarkModeContext'
 import Link from 'next/link'
 import { ConnectButton, useCurrentAccount } from '@mysten/dapp-kit'
+import { useRouter } from 'next/navigation'
 
 export default function Navbar() {
     const { darkMode, toggleDarkMode } = useDarkMode()
     const account = useCurrentAccount()
+    const router = useRouter()
 
     return (
-        <nav className="fixed w-full flex px-5 md:px-30 h-10 md:h-12 items-center justify-between  bg-gray-200 dark:bg-gray-900 shadow-lg border-b border-b-blue-100 dark:border-b-blue-950 border-solid">
-            <div className="text-gray-800 dark:text-white text-base md:text-xl font-bold">
-                <Link href="/">
-                    <p>SUI Protocol</p>
+        <nav className="fixed w-full flex px-5 md:px-30 h-10 md:h-12 items-center justify-between bg-gray-200 dark:bg-gray-900 shadow-lg border-b border-b-blue-100 dark:border-b-blue-950 border-solid z-50">
+            <div className="flex items-center gap-8">
+                <div className="text-gray-800 dark:text-white text-base md:text-xl font-bold">
+                    <Link href="/">
+                        <p>SUI Protocol</p>
+                    </Link>
+                </div>
+                <Link
+                    href="/docs"
+                    className="text-gray-700 dark:text-gray-300 hover:text-blue-600 dark:hover:text-blue-400 transition-colors text-sm md:text-base font-medium"
+                >
+                    Docs
                 </Link>
             </div>
 
-            <div className="inline-flex items-center space-x-1">
+            <div className="inline-flex items-center space-x-2 md:space-x-3">
+                {account && (
+                    <button
+                        onClick={() => router.push('/')}
+                        className="hidden md:flex items-center gap-2 px-3 py-1.5 bg-blue-500/10 dark:bg-blue-500/20 hover:bg-blue-500/20 dark:hover:bg-blue-500/30 rounded-lg transition-colors border border-blue-500/20"
+                    >
+                        <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse"></div>
+                        <span className="text-xs font-mono text-blue-600 dark:text-blue-400">
+                            {account.address.slice(0, 6)}...{account.address.slice(-4)}
+                        </span>
+                    </button>
+                )}
                 <button
-                    className="md:w-8 md:h-8 text-blue-900 dark:text-blue-200 font-bold cursor-pointer"
+                    className="w-6 h-6 md:w-8 md:h-8 text-blue-900 dark:text-blue-200 font-bold cursor-pointer"
                     onClick={toggleDarkMode}
                 >
                     {darkMode ? (
