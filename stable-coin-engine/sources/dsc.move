@@ -117,7 +117,7 @@ fun init(otw: DSC, ctx: &mut TxContext) {
         18, // decimals
         string::utf8(b"DSC"), // symbol
         string::utf8(b"Decentralized Stablecoin"),
-        string::utf8(b"Protocol-native paged to USD"),
+        string::utf8(b"Protocol-native pagged to USD"),
         string::utf8(b""), // icon URL
         ctx,
     );
@@ -676,7 +676,8 @@ public fun get_user_position_info(
 /// # Returns
 /// - Option<ID>: Some(position_id) if the user has a position, None otherwise
 public fun get_user_position_id(dsc_ledger: &DSCLedger, ctx: &mut TxContext): Option<ID> {
-    if (dsc_ledger.users_positions_index.contains(ctx.sender())) {
+    let user = ctx.sender();
+    if (dsc_ledger.users_positions_index.contains(user)) {
         option::some(*dsc_ledger.users_positions_index.borrow(user))
     } else {
         option::none()

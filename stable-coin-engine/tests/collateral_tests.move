@@ -41,11 +41,14 @@ fun setup_dsc_system(): Scenario {
         let mut config = ts::take_shared<DSCConfig>(&scenario);
 
         // Add SUI as supported collateral
+        // Note: Using a dummy currency_id for testing. In production, this would be the actual Currency<SUI> object ID
+        let dummy_currency_id = object::id_from_address(@0xC001);
         dsc_config::add_new_supported_coin<SUI>(
             &admin_cap,
             &mut config,
             SUI_PRICE_FEED_INDEX,
             SUI_DECIMALS,
+            dummy_currency_id,
         );
 
         ts::return_shared(config);

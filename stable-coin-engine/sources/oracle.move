@@ -106,10 +106,10 @@ public fun get_price_by_typename(
     oracle_holder: &OracleHolder,
     dsc_config: &DSCConfig,
 ): u128 {
-    // Get coin info (price feed index and decimals)
-    let coin_info = dsc_config::get_coin_info(dsc_config, coin_type);
-    let price_lane_index = dsc_config::coin_info_price_feed_index(&coin_info);
-    let coin_decimals = dsc_config::coin_info_decimals(&coin_info);
+    // Get coin data (price feed index and decimals)
+    let coin_data = dsc_config::get_supported_coin_data(dsc_config, coin_type);
+    let price_lane_index = dsc_config::supported_coin_data_price_feed_index(&coin_data);
+    let coin_decimals = dsc_config::supported_coin_data_decimals(&coin_data);
 
     // Get the price from the oracle
     let (mut price, decimal, _timestamp, round) = SupraSValueFeed::get_price(

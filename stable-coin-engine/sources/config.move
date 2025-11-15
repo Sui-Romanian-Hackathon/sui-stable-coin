@@ -1,7 +1,9 @@
 module dsc::dsc_config;
 
 use dsc::utils;
+use std::string::String;
 use std::type_name::{Self, TypeName};
+use sui::coin_registry::{Self, Currency};
 use sui::vec_map::{Self, VecMap};
 
 // ==================== Events ====================
@@ -10,6 +12,7 @@ public struct CoinAdded has copy, drop {
     coin_type: TypeName,
     price_feed_index: u32,
     decimals: u8,
+    currency_id: ID,
 }
 
 /// Emitted when a collateral coin is removed
@@ -53,6 +56,8 @@ public struct LiquidationBonusUpdated has copy, drop {
 const ECoinAlreadySupported: vector<u8> = b"Coin already supported";
 #[error]
 const EOracleAlreadySupported: vector<u8> = b"Oracle holder already supported";
+#[error]
+const EWrongCurrencyObject: vector<u8> = b"Wrong Currency object provided";
 
 // ==================== Structures ====================
 
@@ -60,16 +65,28 @@ const EOracleAlreadySupported: vector<u8> = b"Oracle holder already supported";
 public struct AdminCap has key { id: UID }
 
 // Stores information about a supported collateral coin
-public struct CoinInfo has copy, drop, store {
-    price_feed_index: u32, // Oracle price feed index for this coin
-    decimals: u8, // Decimal precision of the coin
+public struct SupportedCoinData has copy, drop, store {
+    price_feed_index: u32,
+    decimals: u8,
+    currency_id: ID,
+}
+
+// Frontend-facing struct with complete coin information
+// This is returned via DevInspect and not stored on-chain
+public struct CoinInfo has copy, drop {
+    coin_type: TypeName,
+    price: u128,
+    icon_url: String,
+    name: String,
+    symbol: String,
+    decimals: u8,
 }
 
 // DSC config object
 public struct DSCConfig has key, store {
     id: UID,
     owner: address,
-    supported_collateral_coins: VecMap<TypeName, CoinInfo>, // a map of all the supported collateral coins
+    supported_collateral_coins: VecMap<TypeName, SupportedCoinData>, // a map of all the supported collateral coins
     precision: u128, // precision for the system
     liquidation_threshold: u128,
     min_health_factor: u128,
@@ -100,6 +117,7 @@ fun init(ctx: &mut TxContext) {
 /// - config: Mutable reference to DSCConfig
 /// - price_feed_index: The oracle price feed index for this coin
 /// - decimals: The decimal precision of the coin
+/// - currency_id: The object ID of the Currency<T> object
 ///
 /// Generic:
 /// - T: The coin type to add (e.g., 0x2::sui::SUI)
@@ -110,23 +128,26 @@ public fun add_new_supported_coin<T>(
     config: &mut DSCConfig,
     price_feed_index: u32,
     decimals: u8,
+    currency_id: ID,
 ) {
     let coin_type = get_type<T>();
 
     assert!(!config.supported_collateral_coins.contains(&coin_type), ECoinAlreadySupported);
 
-    let coin_info = CoinInfo {
+    let coin_data = SupportedCoinData {
         price_feed_index,
         decimals,
+        currency_id,
     };
 
-    config.supported_collateral_coins.insert(coin_type, coin_info);
+    config.supported_collateral_coins.insert(coin_type, coin_data);
 
     // Emit event
     sui::event::emit(CoinAdded {
         coin_type,
         price_feed_index,
         decimals,
+        currency_id,
     });
 }
 
@@ -360,16 +381,16 @@ public fun get_collateral_coin_price_feed_index_option(
     }
 }
 
-/// Get the complete CoinInfo for a specific collateral coin
+/// Get the complete SupportedCoinData for a specific collateral coin
 ///
 /// Args:
 /// - config: Reference to the DSCConfig
 /// - coin_type: The TypeName of the coin
 ///
-/// Returns: The CoinInfo struct containing price_feed_index and decimals
+/// Returns: The SupportedCoinData struct containing price_feed_index, decimals, and currency_id
 ///
 /// Aborts if the coin type is not supported
-public fun get_coin_info(config: &DSCConfig, coin_type: &TypeName): CoinInfo {
+public fun get_supported_coin_data(config: &DSCConfig, coin_type: &TypeName): SupportedCoinData {
     *config.supported_collateral_coins.get(coin_type)
 }
 
@@ -386,29 +407,145 @@ public fun get_coin_decimals(config: &DSCConfig, coin_type: &TypeName): u8 {
     config.supported_collateral_coins.get(coin_type).decimals
 }
 
-// ==================== CoinInfo accessor functions ====================
-
-/// Extract the price feed index from a CoinInfo struct
+/// Get the Currency object ID for a specific collateral coin
 ///
 /// Args:
-/// - coin_info: Reference to a CoinInfo struct
+/// - config: Reference to the DSCConfig
+/// - coin_type: The TypeName of the coin
+///
+/// Returns: The Currency object ID
+///
+/// Aborts if the coin type is not supported
+public fun get_coin_currency_id(config: &DSCConfig, coin_type: &TypeName): ID {
+    config.supported_collateral_coins.get(coin_type).currency_id
+}
+
+// ==================== Frontend getter functions ====================
+
+/// Get a vector of all supported coin TypeNames
+/// Useful for the frontend to iterate through supported coins
+///
+/// Args:
+/// - config: Reference to the DSCConfig
+///
+/// Returns: Vector of TypeNames for all supported collateral coins
+public fun get_supported_coin_types(config: &DSCConfig): vector<TypeName> {
+    let mut types = vector::empty<TypeName>();
+    let length = config.supported_collateral_coins.length();
+    let mut index = 0;
+
+    while (index < length) {
+        let (coin_type, _) = config.supported_collateral_coins.get_entry_by_idx(index);
+        types.push_back(*coin_type);
+        index = index + 1;
+    };
+
+    types
+}
+
+/// Get complete coin information for a specific coin type
+/// Designed to be called via DevInspect from the frontend
+///
+/// Args:
+/// - config: Reference to DSCConfig
+/// - currency_obj: The Currency<T> object for this coin type
+/// - price: The current price from oracle (caller must fetch this separately)
+///
+/// Returns:
+/// - CoinInfo struct with price, icon_url, name, symbol, decimals
+///
+/// Aborts:
+/// - If the coin type is not supported
+/// - If the wrong Currency object is provided
+public fun get_coin_info<T: drop>(
+    config: &DSCConfig,
+    currency_obj: &Currency<T>,
+    price: u128,
+): CoinInfo {
+    let coin_type = get_type<T>();
+    let coin_data = *config.supported_collateral_coins.get(&coin_type);
+
+    // Verify it's the right Currency object
+    assert!(object::id(currency_obj) == coin_data.currency_id, EWrongCurrencyObject);
+
+    // Fetch metadata from Currency object
+    let icon_url = coin_registry::icon_url(currency_obj);
+    let name = coin_registry::name(currency_obj);
+    let symbol = coin_registry::symbol(currency_obj);
+
+    CoinInfo {
+        coin_type,
+        price,
+        icon_url,
+        name,
+        symbol,
+        decimals: coin_data.decimals,
+    }
+}
+
+// ==================== SupportedCoinData accessor functions ====================
+
+/// Extract the price feed index from a SupportedCoinData struct
+///
+/// Args:
+/// - coin_data: Reference to a SupportedCoinData struct
 ///
 /// Returns: The price feed index
-public fun coin_info_price_feed_index(coin_info: &CoinInfo): u32 {
-    coin_info.price_feed_index
+public fun supported_coin_data_price_feed_index(coin_data: &SupportedCoinData): u32 {
+    coin_data.price_feed_index
+}
+
+/// Extract the decimals from a SupportedCoinData struct
+///
+/// Args:
+/// - coin_data: Reference to a SupportedCoinData struct
+///
+/// Returns: The decimal precision
+public fun supported_coin_data_decimals(coin_data: &SupportedCoinData): u8 {
+    coin_data.decimals
+}
+
+/// Extract the currency_id from a SupportedCoinData struct
+///
+/// Args:
+/// - coin_data: Reference to a SupportedCoinData struct
+///
+/// Returns: The Currency object ID
+public fun supported_coin_data_currency_id(coin_data: &SupportedCoinData): ID {
+    coin_data.currency_id
+}
+
+// ==================== CoinInfo accessor functions ====================
+
+/// Extract the coin_type from a CoinInfo struct
+public fun coin_info_coin_type(coin_info: &CoinInfo): TypeName {
+    coin_info.coin_type
+}
+
+/// Extract the price from a CoinInfo struct
+public fun coin_info_price(coin_info: &CoinInfo): u128 {
+    coin_info.price
+}
+
+/// Extract the icon_url from a CoinInfo struct
+public fun coin_info_icon_url(coin_info: &CoinInfo): String {
+    coin_info.icon_url
+}
+
+/// Extract the name from a CoinInfo struct
+public fun coin_info_name(coin_info: &CoinInfo): String {
+    coin_info.name
+}
+
+/// Extract the symbol from a CoinInfo struct
+public fun coin_info_symbol(coin_info: &CoinInfo): String {
+    coin_info.symbol
 }
 
 /// Extract the decimals from a CoinInfo struct
-///
-/// Args:
-/// - coin_info: Reference to a CoinInfo struct
-///
-/// Returns: The decimal precision
 public fun coin_info_decimals(coin_info: &CoinInfo): u8 {
     coin_info.decimals
 }
-
-// ==================== Private functions ====================
 
 public fun get_type<T>(): TypeName {
     type_name::with_defining_ids<T>()
