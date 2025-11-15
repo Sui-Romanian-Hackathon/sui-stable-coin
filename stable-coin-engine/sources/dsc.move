@@ -667,6 +667,54 @@ public fun get_user_position_info(
     }
 }
 
+/// Check if a user has a position in the DSC ledger and return its ID
+///
+/// # Arguments
+/// - dsc_ledger: the ledger to check for user positions
+/// - user: the address of the user to check
+///
+/// # Returns
+/// - Option<ID>: Some(position_id) if the user has a position, None otherwise
+public fun get_user_position_id(dsc_ledger: &DSCLedger, ctx: &mut TxContext): Option<ID> {
+    if (dsc_ledger.users_positions_index.contains(ctx.sender())) {
+        option::some(*dsc_ledger.users_positions_index.borrow(user))
+    } else {
+        option::none()
+    }
+}
+
+/// CHEAT CODE: Mint DSC without health factor checks (UNSAFE - for demonstration only)
+///
+/// This function bypasses all health factor and ownership checks, allowing the admin
+/// to mint DSC to any position. It requires the AdminCap to ensure only authorized users can call it.
+/// USE WITH CAUTION - This can break the protocol's collateralization guarantees.
+///
+/// # Arguments
+/// - _admin: AdminCap from the config module to authorize this operation
+/// - user_position: the position to mint DSC to (can be any position, not just caller's)
+/// - amount_2_mint: the amount of DSC to mint
+/// - dsc_ledger: the ledger of the protocol that has the treasury cap of the DSC coin
+/// - ctx: transaction context
+///
+/// # Aborts
+/// - If the amount to mint is zero
+public fun mint_dsc_cheat(
+    _admin: &dsc_config::AdminCap,
+    user_position: &mut UserPosition,
+    amount_2_mint: u128,
+    dsc_ledger: &mut DSCLedger,
+    ctx: &mut TxContext,
+) {
+    //Checks
+    assertValueIsGreaterThenZero(amount_2_mint);
+
+    let current_user_debt = user_position.debt;
+    user_position.debt = current_user_debt + amount_2_mint;
+
+    let minted_coin = coin::mint(&mut dsc_ledger.treasury_cap, amount_2_mint as u64, ctx);
+    transfer::public_transfer(minted_coin, user_position.owner);
+}
+
 // ==================== Private functions ====================
 
 /// Get token amount equivalent from USD value
