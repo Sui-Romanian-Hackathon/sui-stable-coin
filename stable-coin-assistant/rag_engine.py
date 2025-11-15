@@ -12,6 +12,8 @@ class ProtocolRAG:
         self.knowledge_base_path = Path(knowledge_base_path)
         self.model_name = model_name
 
+        self.chat_histories = {}
+
         if not self._check_ollama_running():
             print("Ollama is not running!")
             sys.exit(1)
@@ -93,6 +95,161 @@ class ProtocolRAG:
         )
 
         return vectorstore
+
+    def _get_history(self, session_id):
+        if session_id not in self.chat_histories:
+            self.chat_histories[session_id] = []
+        return self.chat_histories[session_id]
+
+    def is_simple_message(self, message: str) -> bool:
+        simple_messages = ["hi", "hello", "hey", "thanks", "thank you", "good morning", "good evening"]
+        return message.strip().lower() in simple_messages
+
+    def simple_reply(self, message: str) -> str:
+        replies = {
+            "hi": "Hello! How can I help you today?",
+            "hello": "Hi there! What would you like to know?",
+            "hey": "Hey! How’s it going?",
+            "thanks": "You’re welcome!",
+            "thank you": "Happy to help!"
+        }
+        return replies.get(message.strip().lower(), "Hello!")
+
+
+    def _rewrite_question(self, history, question):
+        if not history:
+            return question  # nothing to rewrite
+
+        history_text = "\n".join([f"{m['role'].upper()}: {m['content']}" for m in history])
+
+        prompt = f"""
+Rewrite the user's question so it becomes a standalone question.
+Use the conversation history to resolve references.
+
+CONVERSATION:
+{history_text}
+
+USER QUESTION:
+{question}
+
+Standalone rewritten question:
+"""
+        rewritten = self.llm.invoke(prompt)
+        return rewritten.strip()
+
+
+    def general_query(self, question, session_id="general"):
+        if self.is_simple_message(question):
+            return {
+                "answer": self.simple_reply(question),
+                "sources": []
+            }
+
+        history = self._get_history(session_id)
+
+        rewritten = self._rewrite_question(history, question)
+
+        docs = self.vectorstore.similarity_search(rewritten, k=4)
+        context = "\n\n".join([doc.page_content for doc in docs])
+
+        prompt = f"""
+You are a knowledgeable assistant about a Sui stablecoin protocol.
+Answer the user question using ONLY the documentation.
+
+DOCUMENTATION:
+{context}
+
+USER QUESTION:
+{question}
+    
+    INSTRUCTIONS:
+1. Answer based ONLY on the provided documentation
+2. Answer in no more than 5 phrases
+3. Provide specific numbers and actionable advice
+4. If recommending actions, calculate exact amounts needed
+5. Warn about risks when health factor is low (< 1.5)
+6. If you cannot find the answer in the documentation, say so
+7. Be concise but complete
+    
+ANSWER:
+"""
+
+        response = self.llm.invoke(prompt)
+
+        # Save memory
+        history.append({"role": "user", "content": question})
+        history.append({"role": "assistant", "content": response})
+
+        return {
+            "answer": response,
+            "sources": list(set([doc.metadata.get("source") for doc in docs]))
+        }
+
+
+    def personalized_query(self, question, user_position, protocol_params, session_id):
+        if self.is_simple_message(question):
+            return {
+                "answer": self.simple_reply(question),
+                "sources": []
+            }
+
+        history = self._get_history(session_id)
+
+        rewritten = self._rewrite_question(history, question)
+
+        docs = self.vectorstore.similarity_search(rewritten, k=4)
+        context = "\n\n".join([doc.page_content for doc in docs])
+
+        position_str = f"""
+- Collateral: {user_position.get('collateral', 'Unknown')}
+- Collateral Value: ${user_position.get('collateral_value', 0):,.2f}
+- Borrowed Amount: ${user_position.get('borrowed_amount', 0):,.2f}
+- Health Factor: {user_position.get('health_factor', 0):.2f}
+"""
+
+        params_str = f"""
+- Liquidation Threshold: {protocol_params.get('liquidation_threshold', 0.80):.0%}
+- Minimum Health Factor: {protocol_params.get('min_health_factor', 1.0)}
+"""
+
+        prompt = f"""
+You are a personalized assistant for a Sui stablecoin protocol.
+
+DOCUMENTATION:
+{context}
+
+USER POSITION:
+{position_str}
+
+PROTOCOL PARAMETERS:
+{params_str}
+
+ORIGINAL QUESTION:
+{question}
+
+
+INSTRUCTIONS:
+1. Answer based ONLY on the documentation and the provided user data
+2. Answer in no more than 5 phrases
+3. Provide specific numbers and highly actionable advice
+4. If recommending actions, calculate exact amounts needed
+5. Warn the user when their health factor is low (< 1.5)
+6. If you cannot find the answer in the documentation, say so
+7. Be concise but complete
+
+ANSWER:
+"""
+        response = self.llm.invoke(prompt)
+
+        # Save memory
+        history.append({"role": "user", "content": question})
+        history.append({"role": "assistant", "content": response})
+
+        return {
+            "answer": response,
+            "sources": list(set([doc.metadata.get("source") for doc in docs]))
+        }
+
 
     def query(self, question, user_position, protocol_params):
 
