@@ -6,10 +6,43 @@ import { ChatPopup } from '@/app/components/ChatPopup'
 import { useCurrentAccount } from '@mysten/dapp-kit'
 import Wallet from '@/app/components/wallet/Wallet'
 import { SuiAnimatedBackground } from '@/app/components/SuiAnimatedBackground'
+import { useUserPosition, useSupportedCoins } from '@/app/hooks/useDSCData'
+import { useEffect } from 'react'
 
 export default function Home() {
     const { darkMode } = useDarkMode()
     const account = useCurrentAccount()
+
+    // Integrate DSC Data hooks
+    const {
+        data: userPosition,
+        isLoading: isLoadingPosition,
+        error: positionError,
+    } = useUserPosition()
+    const {
+        data: supportedCoins,
+        isLoading: isLoadingCoins,
+        error: coinsError,
+    } = useSupportedCoins()
+
+    // Log the data to console whenever it changes
+    useEffect(() => {
+        console.log('=== DSC Data Hook Output ===')
+        console.log('User Position:', {
+            data: userPosition,
+            isLoading: isLoadingPosition,
+            error: positionError,
+        })
+    }, [userPosition, isLoadingPosition, positionError])
+
+    useEffect(() => {
+        console.log('=== DSC Data Hook Output ===')
+        console.log('Supported Coins:', {
+            data: supportedCoins,
+            isLoading: isLoadingCoins,
+            error: coinsError,
+        })
+    }, [supportedCoins, isLoadingCoins, coinsError])
 
     return (
         <div
@@ -32,37 +65,53 @@ export default function Home() {
                             </h1>
 
                             <p className="text-xl md:text-2xl text-gray-600 dark:text-gray-400 max-w-2xl mx-auto">
-                                Experience the simplicity of DeFi on Sui. Built with Move's object-centric model, our protocol delivers what takes hundreds of lines on other chains in just a few elegant functions.
+                                Experience the simplicity of DeFi on Sui. Built
+                                with Move's object-centric model, our protocol
+                                delivers what takes hundreds of lines on other
+                                chains in just a few elegant functions.
                             </p>
 
                             <div className="grid md:grid-cols-3 gap-6 pt-8">
                                 <div className="p-6 bg-white/50 dark:bg-slate-800/50 backdrop-blur rounded-xl border border-gray-200 dark:border-slate-700">
                                     <div className="text-3xl mb-2">⚡</div>
-                                    <h3 className="font-semibold text-lg mb-2">Simple by Design</h3>
+                                    <h3 className="font-semibold text-lg mb-2">
+                                        Simple by Design
+                                    </h3>
                                     <p className="text-sm text-gray-600 dark:text-gray-400">
-                                        Move's native object model eliminates complexity. No mappings, no complex state management.
+                                        Move's native object model eliminates
+                                        complexity. No mappings, no complex
+                                        state management.
                                     </p>
                                 </div>
 
                                 <div className="p-6 bg-white/50 dark:bg-slate-800/50 backdrop-blur rounded-xl border border-gray-200 dark:border-slate-700">
                                     <div className="text-3xl mb-2">🔒</div>
-                                    <h3 className="font-semibold text-lg mb-2">Secure & Auditable</h3>
+                                    <h3 className="font-semibold text-lg mb-2">
+                                        Secure & Auditable
+                                    </h3>
                                     <p className="text-sm text-gray-600 dark:text-gray-400">
-                                        Move's resource types and ownership system prevent common vulnerabilities at compile time.
+                                        Move's resource types and ownership
+                                        system prevent common vulnerabilities at
+                                        compile time.
                                     </p>
                                 </div>
 
                                 <div className="p-6 bg-white/50 dark:bg-slate-800/50 backdrop-blur rounded-xl border border-gray-200 dark:border-slate-700">
                                     <div className="text-3xl mb-2">🚀</div>
-                                    <h3 className="font-semibold text-lg mb-2">Blazing Fast</h3>
+                                    <h3 className="font-semibold text-lg mb-2">
+                                        Blazing Fast
+                                    </h3>
                                     <p className="text-sm text-gray-600 dark:text-gray-400">
-                                        Sui's parallel execution means instant transactions without sacrificing decentralization.
+                                        Sui's parallel execution means instant
+                                        transactions without sacrificing
+                                        decentralization.
                                     </p>
                                 </div>
                             </div>
 
                             <p className="text-sm text-gray-500 dark:text-gray-500 pt-4 font-mono">
-                                Connect your wallet to start borrowing, depositing, and managing collateral
+                                Connect your wallet to start borrowing,
+                                depositing, and managing collateral
                             </p>
                         </div>
                     </div>

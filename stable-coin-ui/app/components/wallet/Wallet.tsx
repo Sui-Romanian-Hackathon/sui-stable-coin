@@ -40,7 +40,7 @@ export default function Wallet() {
                         </div>
 
                         <div className="px-5 md:px-30">
-                            <Collateral />
+                            {/* <Collateral /> */}
                         </div>
 
                         {/*<GetInfoTransaction />*/}

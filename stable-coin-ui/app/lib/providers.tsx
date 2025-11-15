@@ -8,6 +8,7 @@ import {
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { ReactNode } from 'react'
 import DarkModeProvider from '@/app/context/DarkModeContext'
+import { DSCProvider } from '@/app/context/DSCContext'
 
 // Configure network
 const { networkConfig } = createNetworkConfig({
@@ -25,7 +26,9 @@ export default function Providers({ children }: { children: ReactNode }) {
                     networks={networkConfig}
                     defaultNetwork="testnet"
                 >
-                    <WalletProvider>{children}</WalletProvider>
+                    <WalletProvider>
+                        <DSCProvider>{children}</DSCProvider>
+                    </WalletProvider>
                 </SuiClientProvider>
             </QueryClientProvider>
         </DarkModeProvider>
