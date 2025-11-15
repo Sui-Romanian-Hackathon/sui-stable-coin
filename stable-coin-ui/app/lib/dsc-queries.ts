@@ -69,9 +69,28 @@ export async function getUserPositionInfo(
             sender: userAddress,
         })
 
+        console.log('getUserPositionInfo result:', result)
+
+        // Check for execution errors (e.g., oracle not registered)
+        if (result.effects.status.status === 'failure') {
+            console.error('Transaction failed:', result.effects.status.error)
+            // Return empty position with max health factor since we can't calculate it
+            return {
+                id: positionId,
+                coins: [],
+                healthFactor: '340282366920938463463374607431768211455', // u128::max
+                debt: '0',
+                collateralValue: '0',
+            }
+        }
+
         if (result.results?.[0]?.returnValues) {
             const returnValue = result.results[0].returnValues[0]
-            const [data] = returnValue
+            console.log('Position returnValue:', returnValue)
+            const [data, type] = returnValue
+
+            console.log('Position data:', data)
+            console.log('Position type:', type)
 
             // Parse PositionInfo struct
             // This is a simplified parser - you may need to adjust based on actual BCS encoding
