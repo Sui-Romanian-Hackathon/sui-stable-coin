@@ -73,11 +73,11 @@ export default function ActionButtons() {
 
     return (
         <>
-            <div className="pb-5 flex flex-1 flex-row content-center justify-around md:justify-end md:space-x-5">
+            <div className="pb-5 flex flex-1 flex-row content-center justify-around md:justify-end md:space-x-4">
                 <button
                     ref={supplyBtnRef}
                     onClick={() => handleButtonClick('supply', supplyBtnRef)}
-                    className="flex items-center justify-center gap-2 self-end rounded-3xl p-3 bg-gray-200 dark:bg-slate-700 w-35 font-bold  dark:text-gray-300 transition-colors duration-200 hover:bg-teal-900 hover:text-teal-400 cursor-pointer"
+                    className="flex items-center justify-center gap-2 self-end rounded-xl px-6 py-3 bg-blue-500/80 hover:bg-blue-600 backdrop-blur-sm text-white font-semibold transition-all duration-200 shadow-lg hover:shadow-xl cursor-pointer"
                 >
                     <svg
                         xmlns="http://www.w3.org/2000/svg"
@@ -85,21 +85,21 @@ export default function ActionButtons() {
                         viewBox="0 0 24 24"
                         strokeWidth={1.5}
                         stroke="currentColor"
-                        className="w-6 h-6"
+                        className="w-5 h-5"
                     >
                         <path
                             strokeLinecap="round"
                             strokeLinejoin="round"
                             d="M12 9v6m3-3H9m12 0a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z"
                         />
-                    </svg>{' '}
+                    </svg>
                     Supply
                 </button>
 
                 <button
                     ref={borrowBtnRef}
                     onClick={() => handleButtonClick('borrow', borrowBtnRef)}
-                    className="flex items-center justify-center gap-2 self-end rounded-3xl p-3 bg-gray-200 dark:bg-slate-700 w-35 font-bold  dark:text-gray-300 transition-colors duration-200 hover:bg-teal-900 hover:text-teal-400 cursor-pointer"
+                    className="flex items-center justify-center gap-2 self-end rounded-xl px-6 py-3 bg-cyan-500/80 hover:bg-cyan-600 backdrop-blur-sm text-white font-semibold transition-all duration-200 shadow-lg hover:shadow-xl cursor-pointer"
                 >
                     <svg
                         xmlns="http://www.w3.org/2000/svg"
@@ -107,7 +107,7 @@ export default function ActionButtons() {
                         viewBox="0 0 24 24"
                         strokeWidth={1.5}
                         stroke="currentColor"
-                        className="w-6 h-6"
+                        className="w-5 h-5"
                     >
                         <path
                             strokeLinecap="round"

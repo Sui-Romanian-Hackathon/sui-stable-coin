@@ -9,21 +9,6 @@ export function Collateral() {
         'ethereum',
         'solana',
         'polkadot',
-        'bitcoin',
-        'sui',
-        'ethereum',
-        'solana',
-        'polkadot',
-        'bitcoin',
-        'sui',
-        'ethereum',
-        'solana',
-        'polkadot',
-        'bitcoin',
-        'sui',
-        'ethereum',
-        'solana',
-        'polkadot',
     ]
 
     const [coins, setCoins] = useState<Coin[]>([])
@@ -67,19 +52,21 @@ export function Collateral() {
     }, [])
 
     return (
-        <div className="flex flex-col md:flex-row justify-center items-start md:space-x-7 bg-gray-200 dark:bg-slate-900 rounded-xl p-5 mb-5">
-            <div className="w-full flex-1 bg-gray-100 dark:bg-slate-800 rounded-xl mb-2 md:mb-0">
-                <div className="px-5 pt-10 pb-4 w-full flex flex-col space-y-6">
-                    <label className="font-bold text-sm text-gray-600 dark:text-gray-400">
-                        Collateral Asset
+        <div className="flex flex-col md:flex-row justify-center items-start md:space-x-6 mb-5">
+            <div className="w-full flex-1 bg-white/50 dark:bg-slate-800/50 backdrop-blur-md rounded-xl border border-gray-200 dark:border-slate-700 mb-4 md:mb-0">
+                <div className="px-6 pt-6 pb-4 w-full">
+                    <label className="font-bold text-sm text-blue-600 dark:text-blue-400 uppercase tracking-wide">
+                        Collateral Assets
                     </label>
                 </div>
-                {coins?.map((c) => (
-                    <CoinRow key={c.symbol} coin={c} />
-                ))}
+                <div className="px-3 pb-3">
+                    {coins?.map((c) => (
+                        <CoinRow key={c.symbol} coin={c} />
+                    ))}
+                </div>
             </div>
 
-            <div className="w-full flex-1 bg-gray-200 dark:bg-slate-900 rounded-xl flex flex-col">
+            <div className="w-full flex-1 bg-white/50 dark:bg-slate-800/50 backdrop-blur-md rounded-xl border border-gray-200 dark:border-slate-700">
                 <PositionSummary />
             </div>
         </div>
