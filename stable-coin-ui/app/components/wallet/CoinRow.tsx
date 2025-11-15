@@ -36,8 +36,8 @@ export default function CoinRow({ coin }: CoinRowProps) {
             setPopupState((prev) => ({
                 ...prev,
                 position: {
-                    top: rect.bottom + 10,
-                    left: rect.left - 100,
+                    top: rect.bottom + 5,
+                    left: rect.left + rect.width / 2, // Center relative to button
                 },
             }))
         }
@@ -54,8 +54,8 @@ export default function CoinRow({ coin }: CoinRowProps) {
                 isOpen: true,
                 type,
                 position: {
-                    top: rect.bottom + 10,
-                    left: rect.left - 100,
+                    top: rect.bottom + 5,
+                    left: rect.left + rect.width / 2, // Center relative to button
                 },
             })
         }

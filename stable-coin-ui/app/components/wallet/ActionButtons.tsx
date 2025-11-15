@@ -24,8 +24,8 @@ export default function ActionButtons() {
             setPopupState((prev) => ({
                 ...prev,
                 position: {
-                    top: rect.bottom + 10,
-                    left: rect.left - 80,
+                    top: rect.bottom + 5,
+                    left: rect.left + rect.width / 2, // Center relative to button
                 },
             }))
         }
@@ -42,8 +42,8 @@ export default function ActionButtons() {
                 isOpen: true,
                 type,
                 position: {
-                    top: rect.bottom + 10,
-                    left: rect.left - 80,
+                    top: rect.bottom + 5,
+                    left: rect.left + rect.width / 2, // Center relative to button
                 },
             })
         }
